@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141210" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mój piec">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/ikona.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/ikona-180.png">
+<title>Mój piec</title>
+<style>
+:root{
+  --bg:#f6f4f1;--card:#ffffff;--card2:#f1eeea;--fg:#1d1a17;--mut:#6f6760;--line:#e6e1db;
+  --acc:#e8590c;--acc2:#fff0e6;--ok:#2f9e44;--okbg:#e9f7ec;--warn:#e67700;--warnbg:#fff4e0;--bad:#d6336c;--badbg:#ffe8ef;
+  --t1:#e8590c;--t2:#1c7ed6;--t3:#7048e8;--t4:#0c8599;--t5:#868e96;
+  --r:16px;--nav:64px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141210;--card:#1e1b18;--card2:#28241f;--fg:#f1ece6;--mut:#a39a91;--line:#332e29;
+  --acc:#ff8a3d;--acc2:#3a2416;--ok:#51cf66;--okbg:#17301d;--warn:#ffa94d;--warnbg:#3a2a12;--bad:#f06595;--badbg:#3d1626;
+  --t1:#ff8a3d;--t2:#4dabf7;--t3:#9775fa;--t4:#3bc9db;--t5:#adb5bd;
+}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--fg)}
+body{font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 72px)}
+button{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(10px + env(safe-area-inset-top)) 16px 8px;display:flex;align-items:center;gap:10px}
+header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.01em;flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut)}.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
+main{max-width:720px;margin:0 auto;padding:4px 16px}
+section{display:none}section.on{display:block;animation:fade .18s ease}
+@keyframes fade{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:22px 4px 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mt{margin-top:10px}
+.muted{color:var(--mut)}.small{font-size:12.5px}
+/* alarm */
+.alarm{display:flex;gap:10px;align-items:center;background:var(--badbg);color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 35%,transparent);border-radius:var(--r);padding:12px 14px;font-weight:600;margin-bottom:10px}
+/* hero */
+.hero{display:grid;grid-template-columns:150px 1fr;gap:14px;align-items:center}
+.ring{position:relative;width:150px;height:150px}
+.ring svg{width:100%;height:100%}
+.ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .v{font-size:36px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+.ring .u{font-size:12px;color:var(--mut);margin-top:4px}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.kv:last-child{border-bottom:0}.kv b{font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;background:var(--card2);border-radius:99px;padding:4px 10px;color:var(--mut)}
+.chip.on{background:var(--okbg);color:var(--ok)}
+.chip .dot{width:7px;height:7px}
+.chip.on .dot{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.spark{width:100%;height:46px;display:block;margin-top:12px}
+/* tiles */
+.tile .n{font-size:12.5px;color:var(--mut);display:flex;justify-content:space-between}
+.tile .v{font-size:26px;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:-.01em;margin-top:2px}
+.tile .v small{font-size:13px;font-weight:400;color:var(--mut);margin-left:2px}
+.tile .s{font-size:12px;color:var(--mut);margin-top:2px}
+.bar{height:6px;border-radius:9px;background:var(--card2);overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;background:var(--acc);border-radius:9px}
+/* cwu */
+.cwu{display:flex;align-items:center;gap:14px}
+.cwu .big{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+/* stepper */
+.step{display:inline-flex;align-items:center;background:var(--card2);border-radius:12px;overflow:hidden;flex-shrink:0}
+.step button{border:0;background:none;width:40px;height:38px;font-size:20px;cursor:pointer;color:var(--fg)}
+.step button:active{background:var(--line)}
+.step input{width:54px;border:0;background:none;text-align:center;font:inherit;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.step input::-webkit-inner-spin-button{display:none}
+.step .u{font-size:12px;color:var(--mut);margin-right:2px}
+/* settings */
+.row{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);min-height:56px}
+.row:first-of-type{border-top:0}
+.row .l{flex:1;min-width:0}.row .l .s{font-size:12px;color:var(--mut)}
+.row.dirty .l::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--acc);margin-right:6px;vertical-align:middle}
+.card h3{margin:0 0 4px;font-size:15px}
+.seg{display:inline-flex;background:var(--card2);border-radius:12px;padding:3px;gap:2px;flex-wrap:wrap;justify-content:flex-end}
+.seg button{border:0;background:none;padding:7px 10px;border-radius:9px;font-size:13px;cursor:pointer;color:var(--mut)}
+.seg button.on{background:var(--card);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+select.sel{font:inherit;padding:8px 10px;border-radius:12px;border:0;background:var(--card2);color:var(--fg);max-width:55%}
+.pend{color:var(--warn);font-size:12px}
+/* schedule */
+.zones{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.zones button{flex-shrink:0;border:1px solid var(--line);background:var(--card);border-radius:99px;padding:7px 13px;font-size:13.5px;cursor:pointer}
+.zones button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.day{margin-top:14px}.day .h{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;font-weight:600;margin-bottom:6px}
+.hours{display:grid;grid-template-columns:repeat(12,1fr);gap:3px}
+.hours button{border:0;height:34px;border-radius:7px;background:var(--card2);font-size:11px;color:var(--mut);cursor:pointer;padding:0;font-variant-numeric:tabular-nums}
+.hours button.on{background:var(--acc);color:#fff}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:9px 14px;cursor:pointer;font-size:14px}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn:disabled{opacity:.5}
+/* chart */
+.ranges{display:flex;gap:6px}.ranges button{flex:1;border:0;background:var(--card2);border-radius:10px;padding:7px 0;font-size:13px;cursor:pointer;color:var(--mut)}
+.ranges button.on{background:var(--fg);color:var(--bg);font-weight:600}
+.chart{position:relative;margin-top:10px;touch-action:pan-y}
+.chart svg{width:100%;display:block}
+.tip{position:absolute;top:0;pointer-events:none;background:var(--fg);color:var(--bg);font-size:12px;border-radius:8px;padding:6px 8px;white-space:nowrap;display:none;z-index:2}
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.legend button{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:4px 10px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.legend button i{width:10px;height:3px;border-radius:2px}
+.legend button.off{opacity:.4}
+/* events */
+.ev{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}.ev:first-child{border-top:0}
+.ev .t{color:var(--mut);font-variant-numeric:tabular-nums;font-size:12.5px;width:42px;flex-shrink:0;padding-top:1px}
+.ev.ok .m{color:var(--ok)}.ev.blad .m,.ev.alarm .m{color:var(--bad)}
+.evd{font-size:12px;color:var(--mut);margin:12px 0 2px;font-weight:600}
+/* nav */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+nav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--mut);padding:4px 6px;cursor:pointer;min-width:60px}
+nav button svg{width:24px;height:24px}
+nav button.on{color:var(--acc)}
+/* save bar */
+#save{position:fixed;left:12px;right:12px;bottom:calc(var(--nav) + env(safe-area-inset-bottom) + 10px);z-index:6;max-width:696px;margin:auto;background:var(--fg);color:var(--bg);border-radius:16px;padding:10px 10px 10px 16px;display:none;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+#save.on{display:flex}#save span{flex:1;font-size:14px}
+#save .btn{border:0;padding:8px 12px}#save .btn:not(.pri){background:transparent;color:var(--bg)}
+/* modal */
+#modal{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:var(--card);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:20px 18px calc(18px + env(safe-area-inset-bottom));max-height:85vh;overflow:auto;animation:up .2s ease}
+@media (min-width:600px){#modal{align-items:center}#modal .box{border-radius:20px}}
+@keyframes up{from{transform:translateY(30px);opacity:.5}to{transform:none;opacity:1}}
+#modal h3{margin:0 0 10px;font-size:17px}
+#modal ul{padding-left:18px;margin:8px 0}#modal li{margin:4px 0}
+#modal input[type=password]{width:100%;font:inherit;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);margin-top:8px}
+#toast{position:fixed;left:16px;right:16px;top:calc(12px + env(safe-area-inset-top));z-index:11;max-width:520px;margin:auto;background:var(--fg);color:var(--bg);padding:11px 14px;border-radius:12px;display:none;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.empty{text-align:center;color:var(--mut);padding:40px 0}
+code{font-size:12px;background:var(--card2);padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<header><h1>Mój piec</h1><span class="pill" id="status"><span class="dot"></span>łączenie…</span></header>
+<main>
+  <section id="t-pulpit" class="on"><div class="empty">Wczytywanie…</div></section>
+  <section id="t-wykresy">
+    <div class="card">
+      <div class="ranges" id="ranges"><button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24" class="on">24 h</button><button data-h="168">7 dni</button><button data-h="720">30 dni</button></div>
+      <div class="chart" id="ch1"><svg viewBox="0 0 600 250" preserveAspectRatio="none"></svg><div class="tip"></div></div>
+      <div class="legend" id="leg"></div>
+    </div>
+    <h2>Praca</h2>
+    <div class="card"><div class="chart" id="ch2"><svg viewBox="0 0 600 120" preserveAspectRatio="none"></svg><div class="tip"></div></div>
+      <div class="legend"><span class="chip"><i style="width:10px;height:3px;background:var(--t1)"></i>Wentylator %</span><span class="chip"><i style="width:10px;height:6px;background:var(--t4)"></i>Pompa C.O.</span><span class="chip"><i style="width:10px;height:6px;background:var(--t2)"></i>Pompa CWU</span></div></div>
+  </section>
+  <section id="t-nastawy"></section>
+  <section id="t-harmonogram"></section>
+  <section id="t-zdarzenia"></section>
+</main>
+<div id="save"><span id="savetxt"></span><button class="btn" id="cancel">Anuluj</button><button class="btn pri" id="apply">Zapisz</button></div>
+<nav id="nav">
+  <button data-t="pulpit" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-8.5z"/></svg>Pulpit</button>
+  <button data-t="wykresy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>Wykresy</button>
+  <button data-t="nastawy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Nastawy</button>
+  <button data-t="harmonogram"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Harmonogram</button>
+  <button data-t="zdarzenia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>Zdarzenia</button>
+</nav>
+<div id="modal"><div class="box" id="mbox"></div></div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let S=null, draft={}, tab='pulpit', H=24, zone='kociol', hidden=new Set(['A4','A5']);
+const LS={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}}};
+
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',3200)}
+function modal(html){$('#mbox').innerHTML=html;$('#modal').classList.add('on')}
+function closeModal(){$('#modal').classList.remove('on')}
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
+
+/* ---------- wartości ---------- */
+const N=k=>S&&S.nastawy[k];
+const cur=k=>k in draft?draft[k]:(N(k)?N(k).wartosc:null);
+function hrs(m){const r=[];for(let h=0;h<24;h++){if(m>>h&1){const a=h;while(h<24&&m>>h&1)h++;r.push(a+'–'+h)}}return r.length?r.join(', '):'wyłączone'}
+function fmtv(k,v){const n=N(k);if(!n||v==null)return '–';if(n.jedn==='maska')return hrs(v);
+  return n.opcje?n.opcje[v]:v+(n.jedn?' '+n.jedn:'')}
+function setDraft(k,v){const n=N(k);if(!n||n.wartosc==null)return;v=Math.round(+v);if(isNaN(v))return;
+  v=Math.max(n.min,Math.min(n.max,v));if(n.opcje&&!(v in n.opcje))return;
+  if(v===n.wartosc)delete draft[k];else draft[k]=v;saveBar();renderAll()}
+function saveBar(){const n=Object.keys(draft).length;$('#save').classList.toggle('on',n>0);
+  $('#savetxt').textContent=n===1?'1 niezapisana zmiana':n+(n<5?' niezapisane zmiany':' niezapisanych zmian')}
+$('#cancel').onclick=()=>{draft={};saveBar();renderAll()};
+$('#apply').onclick=()=>confirmSave();
+
+function confirmSave(err){
+  const items=Object.entries(draft).map(([k,v])=>{const n=N(k);return `<li><b>${esc(n.grupa)}</b>: ${esc(n.nazwa)}<br><span class="muted">${esc(fmtv(k,n.wartosc))}</span> → <b>${esc(fmtv(k,v))}</b></li>`}).join('');
+  const needPw=S.haslo&&!LS.get('piec_haslo');
+  modal(`<h3>Wysłać zmiany do sterownika?</h3><ul>${items}</ul>
+   ${needPw||err?`<input type="password" id="pw" placeholder="Hasło do zmian" autocomplete="current-password">`:''}
+   ${err?`<p style="color:var(--bad)">${esc(err)}</p>`:''}
+   <p class="small muted">Sterownik odbierze je przy następnym połączeniu (kilka sekund) i potwierdzi.</p>
+   <div class="btns"><button class="btn" onclick="closeModal()">Wróć</button><button class="btn pri" id="go">Wyślij</button></div>`);
+  const pw=$('#pw');if(pw){pw.focus();pw.onkeydown=e=>{if(e.key==='Enter')$('#go').click()}}
+  $('#go').onclick=async()=>{
+    if(pw)LS.set('piec_haslo',pw.value);
+    const r=await api('/api/ustaw',{zmiany:draft,haslo:LS.get('piec_haslo')||''});
+    if(r.ok){closeModal();draft={};saveBar();toast('Wysłano. Czekam na potwierdzenie sterownika…');stan();zdarzenia()}
+    else if(r.haslo){LS.set('piec_haslo',null);confirmSave(r.blad)}
+    else{closeModal();toast(r.blad||'Błąd')}
+  };
+}
+async function api(url,body){try{const r=await fetch(url,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});return await r.json()}catch(e){return{blad:'Brak połączenia z serwerem'}}}
+
+/* ---------- elementy ---------- */
+function stepper(k){const n=N(k),v=cur(k);return `<div class="step"><button data-dec="${k}" aria-label="mniej">−</button><input inputmode="numeric" data-in="${k}" value="${v??''}" ${v==null?'disabled':''}><span class="u">${esc(n.jedn)}</span><button data-inc="${k}" aria-label="więcej">+</button></div>`}
+function control(k){const n=N(k);if(!n.opcje)return stepper(k);const keys=Object.keys(n.opcje).map(Number);
+  if(keys.length<=3)return `<div class="seg">${keys.map(o=>`<button data-k="${k}" data-v="${o}" class="${cur(k)===o?'on':''}">${esc(n.opcje[o])}</button>`).join('')}</div>`;
+  return `<select class="sel" data-sel="${k}">${keys.map(o=>`<option value="${o}" ${cur(k)===o?'selected':''}>${esc(n.opcje[o])}</option>`).join('')}</select>`}
+function row(k,label){const n=N(k);const pend=n.oczekuje!=null?`<div class="pend">⏳ wysyłam: ${esc(fmtv(k,n.oczekuje))}</div>`:'';
+  return `<div class="row${k in draft?' dirty':''}"><div class="l">${esc(label||n.nazwa)}${pend}</div>${control(k)}</div>`}
+function chip(on,label){return `<span class="chip${on?' on':''}"><span class="dot"></span>${esc(label)}</span>`}
+
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.inc)setDraft(b.dataset.inc,cur(b.dataset.inc)+1);
+  else if(b.dataset.dec)setDraft(b.dataset.dec,cur(b.dataset.dec)-1);
+  else if(b.dataset.k&&b.dataset.v!=null)setDraft(b.dataset.k,+b.dataset.v)});
+document.addEventListener('change',e=>{const t=e.target;if(t.dataset.in)setDraft(t.dataset.in,t.value);if(t.dataset.sel)setDraft(t.dataset.sel,t.value)});
+
+/* ---------- pulpit ---------- */
+function ring(v,set){const R=62,C=2*Math.PI*R,A=.75,max=90,f=x=>Math.max(0,Math.min(1,(x||0)/max));
+  const sa=f(set)*A*C;
+  return `<svg viewBox="0 0 150 150"><g transform="rotate(135 75 75)">
+   <circle cx="75" cy="75" r="${R}" fill="none" stroke="var(--card2)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${A*C} ${C}"/>
+   <circle cx="75" cy="75" r="${R}" fill="none" stroke="var(--acc)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${f(v)*A*C} ${C}" style="transition:stroke-dasharray .6s"/>
+   ${set!=null?`<circle cx="${75+R*Math.cos(sa/R)}" cy="${75+R*Math.sin(sa/R)}" r="4.5" fill="var(--card)" stroke="var(--fg)" stroke-width="2"/>`:''}
+  </g></svg>`}
+function renderPulpit(){
+  const p=S.pomiary,box=$('#t-pulpit');
+  const kd=N('B3').wartosc,kn=N('B2').wartosc,fan=S.wentylator;
+  const tile=(n,v,u,s,extra='')=>`<div class="card tile"><div class="n">${n}</div><div class="v">${v==null?'–':v}<small>${u}</small></div>${s?`<div class="s">${s}</div>`:''}${extra}</div>`;
+  const opalPct=p.A6==null?0:Math.min(100,p.A6/ (+(LS.get('piec_zasobnik')||150))*100);
+  box.innerHTML=`
+   ${S.alarm?`<div class="alarm">⚠ Er${S.alarm.kod}: ${esc(S.alarm.opis)}</div>`:''}
+   <div class="card"><div class="hero">
+     <div class="ring">${ring(p.A2,kd)}<div class="c"><div class="v">${p.A2==null?'–':p.A2.toFixed(1)}</div><div class="u">°C kocioł</div></div></div>
+     <div>
+       <div class="kv"><span class="muted">Zadana dzień</span><b>${kd??'–'} °C</b></div>
+       <div class="kv"><span class="muted">Zadana noc</span><b>${kn??'–'} °C</b></div>
+       <div class="kv"><span class="muted">Spaliny</span><b>${p.A15??'–'} °C</b></div>
+       <div class="chips">${chip(S.pompy.AC,'Pompa C.O.')}${chip(fan>0,fan>0?'Wentylator '+fan+'%':'Wentylator')}</div>
+     </div></div>
+     <div class="small muted" style="margin-top:10px">Kocioł - ostatnie 6 h</div><svg class="spark" id="spark" style="margin-top:4px" viewBox="0 0 300 46" preserveAspectRatio="none"></svg>
+   </div>
+   <h2>Ciepła woda</h2>
+   <div class="card"><div class="cwu"><div style="flex:1"><div class="big">${p.A3==null?'–':p.A3.toFixed(1)}<small class="muted" style="font-size:14px;font-weight:400"> °C</small></div>
+     <div class="small muted">${esc(fmtv('G2',cur('G2')))} · ${S.pompy.AD?'<span style="color:var(--ok)">pompa pracuje</span>':'pompa stoi'}</div></div>
+     <div style="text-align:center"><div class="small muted" style="margin-bottom:4px">zadana</div>${stepper('G3')}</div></div></div>
+   <h2>Kotłownia</h2>
+   <div class="grid">
+     ${tile('Podajnik',p.A4,'°C')}
+     ${tile('Zawór',p.A5,'°C','zadana '+(N('I3').wartosc??'–')+' / '+(N('I4').wartosc??'–')+' °C')}
+     ${tile('Opał w zasobniku',p.A6,'kg',S.opal_do?'wystarczy do: '+esc(S.opal_do):'', `<div class="bar"><i style="width:${opalPct}%"></i></div>`)}
+     ${tile('Spalanie 24 h',p.AA,'kg')}
+     ${tile('Cyrkulacja',S.pompy.AE==null?'–':S.pompy.AE?'pracuje':'stoi','',esc(fmtv('H2',N('H2').wartosc)))}
+     ${tile('Sezon',esc(((N('K3').opcje||{})[N('K3').wartosc]||'–').replace('Stały, ','')),'',N('K3').wartosc==null?'':N('K3').wartosc===1?'przełącza sam':'tryb stały')}
+   </div>
+   <p class="small muted" style="margin:14px 4px">Tryb: <b>${S.tryb==='proxy'?'z ekotlownia.pl':'samodzielny'}</b>. Dane ze sterownika co ~7–27 s.</p>`;
+  spark();
+}
+let sparkData=null;
+async function loadSpark(){sparkData=await api('/api/historia?h=6');spark()}
+function spark(){const svg=$('#spark');if(!svg||!sparkData||sparkData.ts.length<2){if(svg)svg.innerHTML='';return}
+  const v=sparkData.A2,t=sparkData.ts,ok=v.filter(x=>x!=null);let lo=Math.min(...ok)-1,hi=Math.max(...ok)+1;
+  const X=i=>(t[i]-t[0])/(t[t.length-1]-t[0])*300,Y=x=>44-(x-lo)/(hi-lo)*40;let d='';
+  v.forEach((x,i)=>{if(x!=null)d+=(d?'L':'M')+X(i).toFixed(1)+','+Y(x).toFixed(1)});
+  svg.innerHTML=`<path d="${d} L300,46 L0,46 Z" fill="var(--acc2)" opacity=".8"/><path d="${d}" fill="none" stroke="var(--acc)" stroke-width="2" vector-effect="non-scaling-stroke"/>`}
+
+/* ---------- nastawy ---------- */
+function renderNastawy(){
+  const box=$('#t-nastawy');if(box.contains(document.activeElement)&&document.activeElement.tagName==='INPUT')return;
+  const groups={};Object.entries(S.nastawy).forEach(([k,n])=>{if(n.jedn==='maska')return;(groups[n.grupa]=groups[n.grupa]||[]).push(k)});
+  const adv='Podawanie i dmuchawa';
+  box.innerHTML=Object.entries(groups).map(([g,keys])=>`<h2>${esc(g)}</h2>${g===adv?'<p class="small muted" style="margin:-4px 4px 8px">Parametry spalania - zmieniaj ostrożnie.</p>':''}<div class="card">${keys.map(k=>row(k)).join('')}</div>`).join('')+
+   `<h2>Bezpieczeństwo</h2><div class="card"><div class="row"><div class="l">Hasło do zmian<div class="s">${S.haslo?'ustawione - zmiany wymagają hasła':'brak - każdy w sieci może zmieniać'}</div></div><button class="btn" id="pwbtn">${S.haslo?'Zmień':'Ustaw'}</button></div>
+    <div class="row"><div class="l">Pojemność zasobnika<div class="s">do paska opału na pulpicie</div></div><div class="step"><button id="zd">−</button><input id="zv" inputmode="numeric" value="${LS.get('piec_zasobnik')||150}"><span class="u">kg</span><button id="zu">+</button></div></div></div>`;
+  $('#pwbtn').onclick=pwDialog;
+  const zs=v=>{v=Math.max(10,Math.min(2000,+v||150));LS.set('piec_zasobnik',v);$('#zv').value=v};
+  $('#zd').onclick=()=>zs(+$('#zv').value-10);$('#zu').onclick=()=>zs(+$('#zv').value+10);$('#zv').onchange=e=>zs(e.target.value);
+}
+function pwDialog(msg){
+  modal(`<h3>${S.haslo?'Zmień hasło do zmian':'Ustaw hasło do zmian'}</h3>
+   <p class="small muted">Hasło będzie potrzebne do każdej zmiany nastaw. Podgląd zostaje bez hasła. Pozostaw „nowe hasło” puste, żeby je usunąć.</p>
+   ${S.haslo?'<input type="password" id="pw0" placeholder="Obecne hasło" autocomplete="current-password">':''}
+   <input type="password" id="pw1" placeholder="Nowe hasło (min. 4 znaki)" autocomplete="new-password">
+   ${msg?`<p style="color:var(--bad)">${esc(msg)}</p>`:''}
+   <div class="btns"><button class="btn" onclick="closeModal()">Anuluj</button><button class="btn pri" id="pwgo">Zapisz</button></div>`);
+  $('#pwgo').onclick=async()=>{const nowe=$('#pw1').value;const r=await api('/api/haslo',{stare:$('#pw0')?$('#pw0').value:'',nowe});
+    if(r.ok){LS.set('piec_haslo',nowe||null);closeModal();toast(nowe?'Hasło ustawione':'Hasło usunięte');stan();zdarzenia()}else pwDialog(r.blad)};
+}
+
+/* ---------- harmonogram ---------- */
+function renderHarm(){
+  const box=$('#t-harmonogram'),z=S.harmonogramy[zone],[name,opis,keys]=z;
+  const days=['Poniedziałek – piątek','Sobota','Niedziela'];
+  box.innerHTML=`<div class="zones">${Object.entries(S.harmonogramy).map(([id,h])=>`<button data-z="${id}" class="${id===zone?'on':''}">${esc(h[0])}</button>`).join('')}</div>
+   <div class="card mt"><h3>${esc(name)}</h3><div class="small muted">${esc(opis)}. Dotknij godziny, aby przełączyć.</div>
+   ${keys.map((k,i)=>{const v=cur(k),n=N(k);return `<div class="day"><div class="h"><span>${days[i]}${k in draft?' <span style="color:var(--acc)">●</span>':''}</span><span class="small muted">${v==null?'':fmtv(k,v)}</span></div>
+     ${n.oczekuje!=null?'<div class="pend">⏳ wysyłam…</div>':''}
+     <div class="hours">${[...Array(24)].map((_,h)=>`<button data-hk="${k}" data-hh="${h}" class="${v!=null&&(v>>h&1)?'on':''}">${h}</button>`).join('')}</div></div>`}).join('')}
+   <div class="btns"><button class="btn" id="hall">Całą dobę</button><button class="btn" id="hcopy">Pon–pt → weekend</button></div></div>
+   <p class="small muted" style="margin:12px 4px">Zmiany zapisujesz przyciskiem „Zapisz” na dole, razem z innymi nastawami.</p>`;
+  $$('.zones button',box).forEach(b=>b.onclick=()=>{zone=b.dataset.z;renderHarm()});
+  $$('[data-hk]',box).forEach(b=>b.onclick=()=>{const k=b.dataset.hk,v=cur(k);if(v==null)return;setDraft(k,v^(1<<+b.dataset.hh))});
+  $('#hall').onclick=()=>keys.forEach(k=>setDraft(k,0xFFFFFF));
+  $('#hcopy').onclick=()=>{const v=cur(keys[0]);if(v!=null){setDraft(keys[1],v);setDraft(keys[2],v)}};
+}
+
+/* ---------- zdarzenia ---------- */
+let EV=[];
+async function zdarzenia(){EV=await api('/api/zdarzenia');if(Array.isArray(EV)&&tab==='zdarzenia')renderEv()}
+function renderEv(){if(!S)return;let last='',html='';
+  (Array.isArray(EV)?EV:[]).forEach(e=>{const d=new Date(e.ts*1000),day=d.toLocaleDateString('pl',{weekday:'long',day:'numeric',month:'long'});
+    if(day!==last){html+=`<div class="evd">${day}</div>`;last=day}
+    html+=`<div class="ev ${e.typ}"><span class="t">${d.toLocaleTimeString('pl',{hour:'2-digit',minute:'2-digit'})}</span><span class="m">${esc(e.msg)}</span></div>`});
+  $('#t-zdarzenia').innerHTML=`<div class="card">${html||'<div class="empty">Brak zdarzeń</div>'}</div>
+   <h2>Informacje</h2><div class="card small">
+    <div class="kv"><span class="muted">Tryb pracy serwera</span><b>${S.tryb==='proxy'?'proxy (z ekotlownia.pl)':'samodzielny'}</b></div>
+    <div class="kv"><span class="muted">Ostatni odczyt</span><b>${S.czas?new Date(S.czas*1000).toLocaleString('pl'):'–'}</b></div>
+    <details style="margin-top:8px"><summary class="muted">Nierozpoznane pola sterownika</summary><p>${Object.entries(S.nieznane).map(([k,v])=>`<code>${k}=${v}</code>`).join(' ')}</p></details></div>`}
+
+/* ---------- wykresy ---------- */
+const SER=[['A2','Kocioł','--t1'],['A3','CWU','--t2'],['A15','Spaliny','--t3'],['A4','Podajnik','--t4'],['A5','Zawór','--t5']];
+let HD=null;
+async function wykres(){HD=await api('/api/historia?h='+H);drawCharts()}
+function drawCharts(){
+  $('#leg').innerHTML=SER.map(([k,n,c])=>`<button data-s="${k}" class="${hidden.has(k)?'off':''}"><i style="background:var(${c})"></i>${n}</button>`).join('');
+  $$('#leg button').forEach(b=>b.onclick=()=>{const k=b.dataset.s;hidden.has(k)?hidden.delete(k):hidden.add(k);drawCharts()});
+  const s1=$('#ch1 svg'),s2=$('#ch2 svg');
+  if(!HD||!HD.ts||HD.ts.length<2){s1.innerHTML=`<text x="300" y="125" text-anchor="middle" fill="var(--mut)" font-size="14">Za mało danych - wykres pojawi się po kilku minutach</text>`;s2.innerHTML='';return}
+  const t=HD.ts,t0=t[0],t1=t[t.length-1],W=600,L=30,X=x=>L+(x-t0)/(t1-t0||1)*(W-L-4);
+  const vis=SER.filter(s=>!hidden.has(s[0]));const all=vis.flatMap(s=>HD[s[0]]).filter(v=>v!=null);
+  let lo=all.length?Math.floor(Math.min(...all)/10)*10:0,hi=all.length?Math.ceil(Math.max(...all)/10)*10:100;if(hi-lo<20)hi=lo+20;
+  const Y=v=>228-(v-lo)/(hi-lo)*218;let g='';
+  for(let v=lo;v<=hi;v+=(hi-lo>60?20:10))g+=`<line x1="${L}" x2="${W}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="0" y="${Y(v)+4}" font-size="11" fill="var(--mut)">${v}°</text>`;
+  const fx=x=>{const d=new Date(x*1000);return H>24?d.toLocaleDateString('pl',{day:'numeric',month:'numeric'}):d.toLocaleTimeString('pl',{hour:'2-digit',minute:'2-digit'})};
+  for(let i=0;i<=4;i++){const x=t0+(t1-t0)*i/4;g+=`<text x="${X(x)}" y="246" font-size="11" fill="var(--mut)" text-anchor="${i==0?'start':i==4?'end':'middle'}">${fx(x)}</text>`}
+  const path=(arr,yf)=>{let d='',gap=false;arr.forEach((v,i)=>{if(v==null){gap=true;return}d+=(d&&!gap?'L':'M')+X(t[i]).toFixed(1)+','+yf(v).toFixed(1);gap=false});return d};
+  vis.slice().reverse().forEach(([k,,c])=>g+=`<path d="${path(HD[k],Y)}" fill="none" stroke="var(${c})" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`);
+  s1.innerHTML=g+'<line id="cur1" y1="0" y2="232" stroke="var(--mut)" stroke-dasharray="3 3" style="display:none"/>';
+  // praca
+  const Y2=v=>78-(v||0)/100*72;let g2=`<line x1="${L}" x2="${W}" y1="78" y2="78" stroke="var(--line)"/><text x="0" y="12" font-size="11" fill="var(--mut)">100%</text>`;
+  const band=(k,y,c)=>{let r='';HD[k].forEach((v,i)=>{if(v&&i<t.length-1)r+=`<rect x="${X(t[i])}" y="${y}" width="${Math.max(1,X(t[i+1])-X(t[i]))}" height="10" fill="var(${c})"/>`});return r};
+  g2+=band('AC',88,'--t4')+band('AD',102,'--t2')+`<path d="${path(HD.AF,Y2)}" fill="none" stroke="var(--t1)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`;
+  s2.innerHTML=g2;
+  // dotyk / najechanie
+  [['#ch1',s1],['#ch2',s2]].forEach(([id,svg])=>{const box=$(id),tip=$('.tip',box);
+    const move=e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*W;if(px<L){tip.style.display='none';return}
+      const tt=t0+(px-L)/(W-L-4)*(t1-t0);let i=0,best=1e18;t.forEach((x,j)=>{const d=Math.abs(x-tt);if(d<best){best=d;i=j}});
+      const lines=[`<b>${new Date(t[i]*1000).toLocaleString('pl',{weekday:'short',hour:'2-digit',minute:'2-digit'})}</b>`].concat(
+        id==='#ch1'?vis.map(([k,n])=>`${n}: ${HD[k][i]??'–'} °C`):[`Wentylator: ${HD.AF[i]??'–'} %`,`Pompa C.O.: ${HD.AC[i]?'pracuje':'stoi'}`,`Pompa CWU: ${HD.AD[i]?'pracuje':'stoi'}`]);
+      tip.innerHTML=lines.join('<br>');tip.style.display='block';const xp=(X(t[i])/W)*r.width;tip.style.left=Math.min(r.width-tip.offsetWidth,Math.max(0,xp-tip.offsetWidth/2))+'px';
+      const c=$('#cur1');if(c&&id==='#ch1'){c.style.display='';c.setAttribute('x1',X(t[i]));c.setAttribute('x2',X(t[i]))}};
+    box.onpointermove=move;box.onpointerdown=move;box.onpointerleave=()=>{tip.style.display='none';const c=$('#cur1');if(c)c.style.display='none'}});
+}
+$('#ranges').onclick=e=>{const b=e.target.closest('button');if(!b)return;H=+b.dataset.h;$$('#ranges button').forEach(x=>x.classList.toggle('on',x===b));wykres()};
+
+/* ---------- nawigacja i odświeżanie ---------- */
+function show(t){tab=t;$$('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));$$('section').forEach(s=>s.classList.toggle('on',s.id==='t-'+t));
+  LS.set('piec_tab',t);if(t==='wykresy')wykres();if(t==='zdarzenia')zdarzenia();renderAll();window.scrollTo(0,0)}
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(b)show(b.dataset.t)};
+function renderAll(){if(!S)return;
+  const ae=document.activeElement;if(ae&&ae.tagName==='INPUT'&&$('#t-'+tab).contains(ae))return;
+  if(tab==='pulpit')renderPulpit();else if(tab==='nastawy')renderNastawy();else if(tab==='harmonogram')renderHarm();else if(tab==='zdarzenia')renderEv()}
+async function stan(){const d=await api('/api/stan');const st=$('#status');
+  if(!d||d.blad){st.innerHTML='<span class="dot bad"></span>brak połączenia z serwerem';return}
+  S=d;for(const k in draft)if(S.nastawy[k]&&S.nastawy[k].wartosc===draft[k])delete draft[k];saveBar();
+  const age=S.czas?S.teraz-S.czas:null;
+  st.innerHTML=age===null?'<span class="dot bad"></span>czekam na sterownik':`<span class="dot ${age>120?'bad':'ok'}"></span>${age<60?age+' s temu':age<7200?Math.round(age/60)+' min temu':'dawno'}`;
+  renderAll()}
+stan();loadSpark();setInterval(stan,5000);setInterval(loadSpark,120000);setInterval(()=>{if(tab==='wykresy')wykres();if(tab==='zdarzenia')zdarzenia()},30000);
+const t0=LS.get('piec_tab');if(t0&&$('#t-'+t0))show(t0);
+</script>
+</body>
+</html>

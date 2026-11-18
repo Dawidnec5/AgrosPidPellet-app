@@ -1,0 +1,2 @@
+{"name":"Mój piec","short_name":"Piec","start_url":"/","display":"standalone","background_color":"#f6f4f1","theme_color":"#e8590c","lang":"pl",
+ "icons":[{"src":"/ikona.svg","sizes":"any","type":"image/svg+xml","purpose":"any"},{"src":"/ikona-180.png","sizes":"180x180","type":"image/png"}]}

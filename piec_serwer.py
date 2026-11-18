@@ -3,10 +3,10 @@
 
 Sterownik (po ustawieniu w nim DNS = ten komputer) wysyła co ~27 s swoje dane na ten
 komputer. Serwer:
-  - zapisuje pomiary (temperatury, opał, spalanie) do bazy SQLite -> wykresy,
-  - pokazuje stronę http://<adres-komputera>/ - otwierasz ją na telefonie w domowym Wi-Fi,
-  - pozwala zmieniać nastawy (temperatury, tryby pomp, CWU...) - zmiana trafia do
-    sterownika w odpowiedzi na jego następne zapytanie, tak samo jak robi to ekotlownia.pl.
+  - zapisuje pomiary do bazy SQLite (wykresy, historia zdarzeń),
+  - wystawia aplikację http://<adres-komputera>/ (telefon w domowym Wi-Fi / Tailscale),
+  - zmienia nastawy i harmonogramy - zmiana trafia do sterownika w odpowiedzi na jego
+    następne zapytanie, w tym samym formacie co z ekotlownia.pl, i jest potwierdzana.
 
 Tryby:
   --tryb proxy  (domyślny) dane idą też do ekotlownia.pl - strona producenta dalej działa
@@ -16,9 +16,11 @@ Tylko biblioteka standardowa Pythona 3.8+.
 """
 import argparse
 import asyncio
-import datetime
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sqlite3
 import sys
 import time
@@ -27,6 +29,7 @@ from urllib.parse import parse_qsl, urlsplit, parse_qs
 import ekoproxy as ek
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WWW = os.path.join(HERE, "www")
 CTRL_HOST = "test5.ekotlownia.pl"
 
 # Kolejność kluczy w odpowiedzi z nastawami - skopiowana z odpowiedzi ekotlownia.pl (18.11.2026).
@@ -50,10 +53,9 @@ POMIARY = {
     "A6": ("Opał w zbiorniku", 1, "kg"),
     "AA": ("Spalanie 24 h", 0.1, "kg"),
 }
-# Pompy: 0 = pracuje, 1 = stoi (odwrócona logika; potwierdzone przez projekt
-# github.com/ImixVega/argos-pid-esphome i zgodne z ekotlownia.pl z 18.11.2026)
+# Pompy: 0 = pracuje, 1 = stoi (odwrócona logika; github.com/ImixVega/argos-pid-esphome,
+# zgodne z ekotlownia.pl z 18.11.2026)
 POMPY = {"AC": "Pompa C.O.", "AD": "Pompa CWU", "AE": "Pompa cyrkulacji"}
-# AB = numer błędu (Er), tabela jak w instrukcji / argos-pid-esphome
 BLEDY = {0: "OK", 1: "Błąd czujnika kotła", 2: "Błąd czujnika podajnika", 3: "Błąd czujnika CWU",
          4: "Błąd czujnika zaworu mieszającego", 5: "Błąd zapisanych ustawień", 6: "Błąd zegara RTC",
          7: "Błąd zapisanych ustawień", 8: "Piec przegrzany", 9: "Przegrzanie podajnika",
@@ -66,8 +68,8 @@ DNI = ["niedziela", "poniedziałek", "wtorek", "środa", "czwartek", "piątek", 
 # Nastawy, które wolno zmieniać: klucz -> (grupa, nazwa, min, max, opcje|None, jednostka)
 # Zakresy i opcje skopiowane z formularza ekotlownia.pl.
 NASTAWY = {
-    "B3": ("Kocioł", "Temperatura kotła - dzień", 20, 79, None, "°C"),
-    "B2": ("Kocioł", "Temperatura kotła - noc", 20, 79, None, "°C"),
+    "B3": ("Kocioł", "Temperatura dzienna", 20, 79, None, "°C"),
+    "B2": ("Kocioł", "Temperatura nocna", 20, 79, None, "°C"),
     "G2": ("CWU", "Tryb pracy", 0, 2, TRYB3, ""),
     "G3": ("CWU", "Temperatura zadana", 41, 80, None, "°C"),
     "G4": ("CWU", "Histereza", 2, 40, None, "°C"),
@@ -80,22 +82,41 @@ NASTAWY = {
     "H3": ("Pompa cyrkulacji", "Temperatura C.O.", 10, 70, None, "°C"),
     "H4": ("Pompa cyrkulacji", "Temperatura CWU", 10, 70, None, "°C"),
     "H5": ("Pompa cyrkulacji", "Histereza", 2, 9, None, "°C"),
-    "H6": ("Pompa cyrkulacji", "Czas pracy", 1, 99, None, ""),
-    "H7": ("Pompa cyrkulacji", "Czas przerwy", 1, 99, None, ""),
-    "I2": ("Zawór", "Tryb pracy", 0, 1, {0: "Stały, wyłączony", 1: "Mieszacz"}, ""),
-    "I3": ("Zawór", "Temperatura zadana - dzień", 20, 70, None, "°C"),
-    "I4": ("Zawór", "Temperatura zadana - noc", 20, 70, None, "°C"),
-    "K3": ("Lato/zima", "Tryb", 0, 2, {0: "Stały, zima", 1: "Automatyczny", 2: "Stały, lato"}, ""),
-    "K4": ("Lato/zima", "Wymuszenie trybu zimowego - czas", 2, 20, None, "h"),
-    "K5": ("Lato/zima", "Wymuszenie trybu zimowego", 0, 1, {0: "Zatrzymane", 1: "Odliczanie"}, ""),
+    "H6": ("Pompa cyrkulacji", "Czas pracy", 1, 99, None, "min"),
+    "H7": ("Pompa cyrkulacji", "Czas przerwy", 1, 99, None, "min"),
+    "I2": ("Zawór mieszający", "Tryb pracy", 0, 1, {0: "Stały, wyłączony", 1: "Mieszacz"}, ""),
+    "I3": ("Zawór mieszający", "Temperatura dzienna", 20, 70, None, "°C"),
+    "I4": ("Zawór mieszający", "Temperatura nocna", 20, 70, None, "°C"),
+    "K3": ("Lato / zima", "Tryb", 0, 2, {0: "Stały, zima", 1: "Automatyczny", 2: "Stały, lato"}, ""),
+    "K4": ("Lato / zima", "Czas wymuszenia zimy", 2, 20, None, "h"),
+    "K5": ("Lato / zima", "Wymuszenie zimy", 0, 1, {0: "Zatrzymane", 1: "Odliczanie"}, ""),
     "C1": ("Podawanie i dmuchawa", "Czas podawania", 5, 20, None, "s"),
     "C2": ("Podawanie i dmuchawa", "Czas przerwy", 3, 220, None, "s"),
-    "C3": ("Podawanie i dmuchawa", "Obroty maksymalne", 1, 98, None, ""),
-    "C4": ("Podawanie i dmuchawa", "Obroty minimalne", 2, 80, None, ""),
-    "C5": ("Podawanie i dmuchawa", "Moc minimalna", 3, 40, None, ""),
+    "C3": ("Podawanie i dmuchawa", "Obroty maksymalne", 1, 98, None, "%"),
+    "C4": ("Podawanie i dmuchawa", "Obroty minimalne", 2, 80, None, "%"),
+    "C5": ("Podawanie i dmuchawa", "Moc minimalna", 3, 40, None, "%"),
 }
+# Harmonogramy: 24 bity = godziny 0-23 (bit 0 = 0:00-1:00), potwierdzone wartościami ze strony.
+HARMONOGRAMY = {
+    "kociol": ("Kocioł", "zaznaczone = temperatura dzienna", ["J1", "J2", "J3"]),
+    "co": ("Pompa C.O.", "zaznaczone = pompa może pracować", ["J6", "J7", "J8"]),
+    "cwu": ("CWU", "zaznaczone = grzanie CWU dozwolone", ["JC", "JD", "JE"]),
+    "zawor": ("Zawór mieszający", "zaznaczone = temperatura dzienna", ["J11", "J12", "J13"]),
+    "cyrkulacja": ("Pompa cyrkulacji", "zaznaczone = pompa może pracować", ["J17", "J18", "J19"]),
+}
+for _strefa, (_n, _o, _keys) in HARMONOGRAMY.items():
+    for _k, _dzien in zip(_keys, ("pon-pt", "sobota", "niedziela")):
+        NASTAWY[_k] = ("Harmonogram " + _n, _dzien, 0, 0xFFFFFF, None, "maska")
+
 MAX_PROB = 3          # ile razy wysłać zmianę, zanim uznamy ją za nieudaną
-SZYBKO_PRZEZ = 60     # s: po otwarciu strony sterownik raportuje co ~7 s zamiast ~27 s
+SZYBKO_PRZEZ = 60     # s: gdy ktoś ogląda aplikację, sterownik raportuje co ~7 s zamiast ~27 s
+ZAPIS_CO = 55         # s: jak często zapisywać pomiar do bazy (wykresy)
+TRZYMAJ_DNI = 400     # tyle dni historii zostaje w bazie
+STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
+          "/index.html": ("index.html", "text/html; charset=utf-8"),
+          "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+          "/ikona.svg": ("ikona.svg", "image/svg+xml"),
+          "/ikona-180.png": ("ikona-180.png", "image/png")}
 
 
 def http_response(body: str) -> bytes:
@@ -104,48 +125,99 @@ def http_response(body: str) -> bytes:
             % len(b)) + b
 
 
+def godziny(mask):
+    """Maska 24 bitów -> czytelne przedziały, np. '5:00-21:00'."""
+    runs, h = [], 0
+    while h < 24:
+        if mask >> h & 1:
+            a = h
+            while h < 24 and mask >> h & 1:
+                h += 1
+            runs.append(f"{a}:00-{h}:00")
+        h += 1
+    return ", ".join(runs) if runs else "wyłączone"
+
+
+def hexint(v):
+    try:
+        return int(str(v).strip(), 16)
+    except ValueError:
+        return None
+
+
 class Piec(ek.App):
     def __init__(self, args):
         super().__init__(args, prefix="serwer")
         self.db = sqlite3.connect(args.baza)
-        self.db.execute("CREATE TABLE IF NOT EXISTS pomiary (ts INTEGER, dane TEXT)")
-        self.db.execute("CREATE INDEX IF NOT EXISTS pomiary_ts ON pomiary(ts)")
-        self.db.execute("CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT)")
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS pomiary (ts INTEGER, dane TEXT);
+            CREATE INDEX IF NOT EXISTS pomiary_ts ON pomiary(ts);
+            CREATE TABLE IF NOT EXISTS ustawienia (klucz TEXT PRIMARY KEY, wartosc TEXT);
+            CREATE TABLE IF NOT EXISTS zdarzenia (ts INTEGER, typ TEXT, msg TEXT);""")
         self.db.commit()
-        row = self.db.execute("SELECT ts, dane FROM pomiary ORDER BY ts DESC LIMIT 1").fetchone()
-        self.state, self.state_ts = (json.loads(row[1]), row[0]) if row else ({}, 0)
         self.extra = {"A36": "0", "A37": "15"}  # ostatnie wartości od ekotlownia.pl
+        self.state, self.state_ts = {}, 0
         for k, v in self.db.execute("SELECT klucz, wartosc FROM ustawienia"):
             if k in self.extra:
                 self.extra[k] = v
+            elif k == "ostatni_stan":
+                d = json.loads(v)
+                self.state, self.state_ts = d["dane"], d["ts"]
         self.pending = {}   # klucz -> {"wartosc": int, "proby": int}
-        self.history = []   # ostatnie zdarzenia dla strony
         self.viewer_ts = 0
+        self.saved_ts = 0
+        self.last_alarm = hexint(self.state.get("AB", "0")) or 0
+        self.bad_pw = 0
+        self.db.execute("DELETE FROM pomiary WHERE ts < ?", (int(time.time()) - TRZYMAJ_DNI * 86400,))
+        self.db.commit()
 
-    def event(self, msg, **kw):
+    # ------------------------------------------------------------ pomocnicze
+    def setting(self, k, v=None):
+        if v is None:
+            row = self.db.execute("SELECT wartosc FROM ustawienia WHERE klucz=?", (k,)).fetchone()
+            return row[0] if row else None
+        self.db.execute("INSERT OR REPLACE INTO ustawienia VALUES (?, ?)", (k, v))
+        self.db.commit()
+
+    def event(self, msg, typ="info", **kw):
         self.log.write("info", msg, **kw)
-        self.history.insert(0, {"t": ek.now()[11:19], "msg": msg})
-        del self.history[30:]
+        self.db.execute("INSERT INTO zdarzenia VALUES (?, ?, ?)", (int(time.time()), typ, msg))
+        self.db.commit()
+
+    def val(self, k):
+        return hexint(self.state[k]) if k in self.state else None
+
+    @staticmethod
+    def fmt(k, v):
+        if v is None:
+            return "?"
+        grp, name, lo, hi, opts, unit = NASTAWY[k]
+        if unit == "maska":
+            return godziny(v)
+        return opts.get(v, str(v)) if opts else f"{v} {unit}".strip()
 
     # ------------------------------------------------------------ sterownik
     async def controller(self, head: bytes, body: bytes):
         data = dict(parse_qsl(body.decode("latin1").strip()))
         if not data.get("A0"):
             return http_response("OK\n")
+        data = {k: v.strip() for k, v in data.items()}
         now = int(time.time())
         self.state, self.state_ts = data, now
-        self.db.execute("INSERT INTO pomiary VALUES (?, ?)", (now, json.dumps(data)))
-        self.db.commit()
+        if now - self.saved_ts >= ZAPIS_CO:
+            self.saved_ts = now
+            compact = {k: v for k, v in data.items() if k.startswith("A") and k != "A0"}
+            self.db.execute("INSERT INTO pomiary VALUES (?, ?)", (now, json.dumps(compact)))
+            self.setting("ostatni_stan", json.dumps({"ts": now, "dane": data}))
         self.check_pending(data)
-        try:
-            kod = int(data.get("AB", "0").strip(), 16)
-        except ValueError:
-            kod = 0
-        if kod != getattr(self, "last_alarm", 0):
-            self.event(f"⚠ ALARM Er{kod}: {BLEDY.get(kod, 'nieznany')}" if kod else "Alarm skasowany")
+        kod = hexint(data.get("AB", "0")) or 0
+        if kod != self.last_alarm:
+            if kod:
+                self.event(f"⚠ Alarm Er{kod}: {BLEDY.get(kod, 'nieznany')}", "alarm")
+            else:
+                self.event("Alarm skasowany", "ok")
             self.last_alarm = kod
 
-        upstream = None
         if self.args.tryb == "proxy":
             upstream = await self.forward(head, body)
             if upstream:
@@ -154,18 +226,15 @@ class Piec(ek.App):
                     k, _, v = line.partition("=")
                     if k in self.extra and v and self.extra[k] != v:
                         self.extra[k] = v
-                        self.db.execute("INSERT OR REPLACE INTO ustawienia VALUES (?, ?)", (k, v))
-                        self.db.commit()
+                        self.setting(k, v)
                 if "\nB2=" in ub and not self.pending:
-                    self.event("Zmiana nastaw z ekotlownia.pl - przekazano do sterownika")
+                    self.event("Zmiana nastaw z ekotlownia.pl - przekazano do sterownika", "zmiana")
                     return upstream
         return http_response(self.response_body())
 
-    def fast(self):
-        return time.time() - self.viewer_ts < SZYBKO_PRZEZ
-
     def response_body(self):
-        lines = ["OK", f"A35={'8' if self.fast() or self.pending else '28'}", f"A36={self.extra['A36']}"]
+        fast = time.time() - self.viewer_ts < SZYBKO_PRZEZ or self.pending
+        lines = ["OK", f"A35={'8' if fast else '28'}", f"A36={self.extra['A36']}"]
         if self.pending:
             for k in SETTINGS_ORDER:
                 if k in STALE_W_ODPOWIEDZI:
@@ -173,8 +242,8 @@ class Piec(ek.App):
                 elif k in self.pending:
                     lines.append(f"{k}={self.pending[k]['wartosc']:x}")
                 elif k in self.state:
-                    lines.append(f"{k}={self.state[k].strip().lower()}")
-            for k, p in self.pending.items():
+                    lines.append(f"{k}={self.state[k].lower()}")
+            for p in self.pending.values():
                 p["proby"] += 1
             self.log.write("wyslano", zmiany={k: p["wartosc"] for k, p in self.pending.items()})
         else:
@@ -184,16 +253,13 @@ class Piec(ek.App):
     def check_pending(self, data):
         for k in list(self.pending):
             p = self.pending[k]
-            try:
-                cur = int(data.get(k, "x").strip(), 16)
-            except ValueError:
-                cur = None
+            cur = hexint(data.get(k, "x"))
             name = f"{NASTAWY[k][0]}: {NASTAWY[k][1]}"
             if cur == p["wartosc"]:
-                self.event(f"✓ Sterownik potwierdził: {name} = {self.fmt(k, cur)}", klucz=k, wartosc=cur)
+                self.event(f"✓ {name} = {self.fmt(k, cur)}", "ok", klucz=k, wartosc=cur)
                 del self.pending[k]
             elif p["proby"] >= MAX_PROB:
-                self.event(f"✗ Sterownik NIE przyjął zmiany: {name} (dalej {self.fmt(k, cur)})",
+                self.event(f"✗ Sterownik nie przyjął: {name} (zostaje {self.fmt(k, cur)})", "blad",
                            klucz=k, wartosc=p["wartosc"])
                 del self.pending[k]
 
@@ -210,79 +276,111 @@ class Piec(ek.App):
             self.log.write("info", f"ekotlownia.pl niedostępna ({e}) - odpowiadam sam")
             return None
 
-    # ------------------------------------------------------------ dane dla strony
-    @staticmethod
-    def fmt(k, v):
-        if v is None:
-            return "?"
-        _, _, _, _, opts, unit = NASTAWY[k]
-        return opts.get(v, str(v)) if opts else f"{v} {unit}".strip()
-
-    def val(self, k):
-        try:
-            return int(self.state[k].strip(), 16)
-        except (KeyError, ValueError):
-            return None
-
+    # ------------------------------------------------------------ API aplikacji
     def api_stan(self):
         self.viewer_ts = time.time()
-        pomiary = []
+        pomiary = {}
         for k, (name, mult, unit) in POMIARY.items():
             v = self.val(k)
-            pomiary.append({"klucz": k, "nazwa": name, "jedn": unit,
-                            "wartosc": None if v is None else round(v * mult, 1)})
+            pomiary[k] = None if v is None else round(v * mult, 1)
         d, h = self.val("A7"), self.val("A8")
-        opal_do = f"{DNI[d]} godz. {h}" if d is not None and h is not None and 0 <= d <= 7 else None
-        nastawy = []
-        for k, (grp, name, lo, hi, opts, unit) in NASTAWY.items():
-            nastawy.append({"klucz": k, "grupa": grp, "nazwa": name, "min": lo, "max": hi,
-                            "opcje": opts, "jedn": unit, "wartosc": self.val(k),
-                            "oczekuje": self.pending.get(k, {}).get("wartosc")})
-        stany = [{"nazwa": n, "wartosc": None if self.val(k) is None else self.val(k) == 0}
-                 for k, n in POMPY.items()]
+        opal_do = f"{DNI[d]}, godz. {h}" if d is not None and h is not None and 0 <= d <= 7 else None
+        nastawy = {k: {"grupa": grp, "nazwa": name, "min": lo, "max": hi, "opcje": opts, "jedn": unit,
+                       "wartosc": self.val(k), "oczekuje": self.pending.get(k, {}).get("wartosc")}
+                   for k, (grp, name, lo, hi, opts, unit) in NASTAWY.items()}
+        pompy = {k: (None if self.val(k) is None else self.val(k) == 0) for k in POMPY}
         c9, af = self.val("C9"), self.val("AF")
-        stany.append({"nazwa": "Wentylator", "wartosc": None if c9 is None else bool(c9 and af),
-                      "info": f"{af if c9 else 0} %" if af is not None and c9 is not None else ""})
         kod = self.val("AB")
-        alarm = None if not kod else {"kod": kod, "opis": BLEDY.get(kod, "Nieznany błąd")}
-        nieznane = {k: self.val(k) for k in self.state if k.startswith("A") and k not in ZNANE_A}
-        return {"czas": self.state_ts, "teraz": int(time.time()), "tryb": self.args.tryb,
-                "pomiary": pomiary, "opal_do": opal_do, "stany": stany, "alarm": alarm, "nastawy": nastawy,
-                "nieznane": nieznane, "zdarzenia": self.history}
+        return {
+            "czas": self.state_ts, "teraz": int(time.time()), "tryb": self.args.tryb,
+            "pomiary": pomiary, "opal_do": opal_do, "pompy": pompy,
+            "wentylator": None if c9 is None or af is None else (af if c9 else 0),
+            "alarm": None if not kod else {"kod": kod, "opis": BLEDY.get(kod, "Nieznany błąd")},
+            "nastawy": nastawy, "harmonogramy": HARMONOGRAMY,
+            "haslo": bool(self.setting("haslo")),
+            "nieznane": {k: self.val(k) for k in self.state if k.startswith("A") and k not in ZNANE_A},
+        }
+
+    def api_zdarzenia(self):
+        rows = self.db.execute("SELECT ts, typ, msg FROM zdarzenia ORDER BY ts DESC, rowid DESC LIMIT 100")
+        return [{"ts": ts, "typ": typ, "msg": msg} for ts, typ, msg in rows]
 
     def api_historia(self, godz):
         od = int(time.time() - godz * 3600)
         rows = self.db.execute("SELECT ts, dane FROM pomiary WHERE ts >= ? ORDER BY ts", (od,)).fetchall()
-        step = max(1, len(rows) // 500)
-        out = {"ts": [], "A2": [], "A3": [], "A15": []}
+        step = max(1, len(rows) // 600)
+        keys = ("A2", "A3", "A15", "A4", "A5")
+        out = {"ts": [], **{k: [] for k in keys}, "AF": [], "AC": [], "AD": []}
         for ts, dane in rows[::step]:
             d = json.loads(dane)
             out["ts"].append(ts)
-            for k in ("A2", "A3", "A15"):
-                try:
-                    out[k].append(round(int(d[k].strip(), 16) * POMIARY[k][1], 1))
-                except (KeyError, ValueError):
-                    out[k].append(None)
+            for k in keys:
+                v = hexint(d.get(k, "x"))
+                out[k].append(None if v is None else round(v * POMIARY[k][1], 1))
+            out["AF"].append(hexint(d.get("AF", "x")))
+            for k in ("AC", "AD"):
+                v = hexint(d.get(k, "x"))
+                out[k].append(None if v is None else int(v == 0))
         return out
 
-    def api_ustaw(self, payload):
-        k = payload.get("klucz")
-        if k not in NASTAWY:
-            return 400, {"blad": "Tej nastawy nie można zmieniać."}
-        try:
-            v = int(payload.get("wartosc"))
-        except (TypeError, ValueError):
-            return 400, {"blad": "Zła wartość."}
-        grp, name, lo, hi, opts, unit = NASTAWY[k]
-        if not lo <= v <= hi or (opts and v not in opts):
-            return 400, {"blad": f"Dozwolony zakres: {lo}-{hi}."}
+    def check_pw(self, given):
+        stored = self.setting("haslo")
+        if not stored:
+            return True
+        salt, h = stored.split("$", 1)
+        calc = hashlib.pbkdf2_hmac("sha256", str(given or "").encode(), bytes.fromhex(salt), 100_000).hex()
+        return hmac.compare_digest(calc, h)
+
+    def api_haslo(self, payload):
+        if not self.check_pw(payload.get("stare")):
+            return 403, {"blad": "Złe obecne hasło."}
+        nowe = str(payload.get("nowe") or "")
+        if nowe and len(nowe) < 4:
+            return 400, {"blad": "Hasło musi mieć co najmniej 4 znaki."}
+        if not nowe:
+            self.db.execute("DELETE FROM ustawienia WHERE klucz='haslo'")
+            self.db.commit()
+            self.event("Hasło do zmian usunięte", "zmiana")
+            return 200, {"ok": True}
+        salt = secrets.token_bytes(16)
+        h = hashlib.pbkdf2_hmac("sha256", nowe.encode(), salt, 100_000).hex()
+        self.setting("haslo", f"{salt.hex()}${h}")
+        self.event("Ustawiono hasło do zmian", "zmiana")
+        return 200, {"ok": True}
+
+    async def api_ustaw(self, payload):
+        if not self.check_pw(payload.get("haslo")):
+            self.bad_pw += 1
+            await asyncio.sleep(min(10, self.bad_pw))   # spowolnij zgadywanie
+            return 403, {"blad": "Złe hasło.", "haslo": True}
+        self.bad_pw = 0
+        zmiany = payload.get("zmiany")
+        if zmiany is None and "klucz" in payload:
+            zmiany = {payload["klucz"]: payload.get("wartosc")}
+        if not isinstance(zmiany, dict) or not zmiany:
+            return 400, {"blad": "Brak zmian."}
         if not self.state:
             return 409, {"blad": "Sterownik jeszcze się nie połączył."}
-        if self.val(k) == v:
-            self.pending.pop(k, None)
-            return 200, {"ok": True, "info": "Bez zmian."}
-        self.pending[k] = {"wartosc": v, "proby": 0}
-        self.event(f"Zlecono: {grp}: {name} {self.fmt(k, self.val(k))} → {self.fmt(k, v)}", klucz=k, wartosc=v)
+        ok = {}
+        for k, v in zmiany.items():
+            if k not in NASTAWY:
+                return 400, {"blad": f"Nastawy {k} nie można zmieniać."}
+            try:
+                v = int(v)
+            except (TypeError, ValueError):
+                return 400, {"blad": f"Zła wartość dla {k}."}
+            grp, name, lo, hi, opts, unit = NASTAWY[k]
+            if not lo <= v <= hi or (opts and v not in opts):
+                return 400, {"blad": f"{grp}: {name} - dozwolony zakres {lo}-{hi}."}
+            ok[k] = v
+        for k, v in ok.items():
+            grp, name = NASTAWY[k][:2]
+            if self.val(k) == v:
+                self.pending.pop(k, None)
+                continue
+            self.pending[k] = {"wartosc": v, "proby": 0}
+            self.event(f"Zlecono: {grp}: {name} {self.fmt(k, self.val(k))} → {self.fmt(k, v)}", "zmiana",
+                       klucz=k, wartosc=v)
         return 200, {"ok": True}
 
     # ------------------------------------------------------------ HTTP
@@ -296,12 +394,14 @@ class Piec(ek.App):
                 k, _, v = line.partition(":")
                 headers[k.strip().lower()] = v.strip()
             n = int(headers.get("content-length") or 0)
+            if n > 100_000:
+                raise ValueError("za duże zapytanie")
             body = await asyncio.wait_for(reader.readexactly(n), 15) if n else b""
             url = urlsplit(target)
             if url.path.startswith("/sz/"):
                 resp = await self.controller(head, body)
             else:
-                resp = self.ui(method, url, body)
+                resp = await self.ui(method, url, body)
             writer.write(resp)
             await writer.drain()
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError,
@@ -313,25 +413,40 @@ class Piec(ek.App):
             except OSError:
                 pass
 
-    def ui(self, method, url, body):
-        if url.path == "/" or url.path == "/index.html":
-            return self.raw(200, "text/html; charset=utf-8", PAGE.encode())
-        if url.path == "/api/stan":
+    async def ui(self, method, url, body):
+        p = url.path
+        if p in STATIC:
+            fname, ctype = STATIC[p]
+            try:
+                with open(os.path.join(WWW, fname), "rb") as f:
+                    return self.raw(200, ctype, f.read())
+            except OSError:
+                return self.raw(404, "text/plain; charset=utf-8", b"brak pliku " + fname.encode())
+        if p == "/api/stan":
             return self.json(200, self.api_stan())
-        if url.path == "/api/historia":
-            godz = float(parse_qs(url.query).get("h", ["24"])[0])
-            return self.json(200, self.api_historia(min(max(godz, 0.1), 24 * 31)))
-        if url.path == "/api/ustaw" and method == "POST":
+        if p == "/api/zdarzenia":
+            return self.json(200, self.api_zdarzenia())
+        if p == "/api/historia":
+            try:
+                godz = float(parse_qs(url.query).get("h", ["24"])[0])
+            except ValueError:
+                godz = 24
+            return self.json(200, self.api_historia(min(max(godz, 0.1), 24 * TRZYMAJ_DNI)))
+        if p in ("/api/ustaw", "/api/haslo") and method == "POST":
             try:
                 payload = json.loads(body or b"{}")
-            except ValueError:
+                assert isinstance(payload, dict)
+            except (ValueError, AssertionError):
                 return self.json(400, {"blad": "Zły format."})
-            return self.json(*self.api_ustaw(payload))
+            if p == "/api/ustaw":
+                return self.json(*(await self.api_ustaw(payload)))
+            return self.json(*self.api_haslo(payload))
         return self.raw(404, "text/plain; charset=utf-8", b"404")
 
     @staticmethod
     def raw(code, ctype, data):
-        reason = {200: "OK", 400: "Bad Request", 404: "Not Found", 409: "Conflict"}.get(code, "OK")
+        reason = {200: "OK", 400: "Bad Request", 403: "Forbidden", 404: "Not Found",
+                  409: "Conflict"}.get(code, "OK")
         return (f"HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {len(data)}\r\n"
                 "Cache-Control: no-store\r\nConnection: close\r\n\r\n").encode() + data
 
@@ -387,103 +502,6 @@ def main():
     except KeyboardInterrupt:
         print("\nKoniec.")
 
-
-PAGE = r"""<!doctype html>
-<html lang="pl"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#1b1f24">
-<title>Mój piec</title>
-<style>
-:root{--bg:#f4f5f7;--card:#fff;--fg:#1b1f24;--mut:#69707a;--line:#e3e5e8;--acc:#d9480f;--ok:#2b8a3e;--warn:#e67700;--bad:#c92a2a;
---c1:#d9480f;--c2:#1c7ed6;--c3:#7048e8}
-@media (prefers-color-scheme:dark){:root{--bg:#121417;--card:#1d2126;--fg:#e9ecef;--mut:#9aa1a9;--line:#2c3138;--acc:#ff8a4c;--c1:#ff8a4c;--c2:#4dabf7;--c3:#9775fa}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{position:sticky;top:0;z-index:2;background:var(--bg);padding:14px 16px 8px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-h1{font-size:20px;margin:0}#status{font-size:13px;color:var(--mut)}#status b{color:var(--ok)}#status.stary b{color:var(--bad)}
-main{max-width:900px;margin:0 auto;padding:0 16px 40px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
-.tile .n{font-size:13px;color:var(--mut)}.tile .v{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}.tile .v small{font-size:14px;color:var(--mut);font-weight:400}
-.tile.main{border-color:var(--acc)}
-h2{font-size:16px;margin:22px 0 8px}
-.tabs button,.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px;font:inherit;cursor:pointer}
-.tabs button.on{background:var(--fg);color:var(--bg)}
-svg{width:100%;height:220px;display:block}.leg{display:flex;gap:14px;font-size:13px;color:var(--mut);margin-top:6px}.leg i{display:inline-block;width:12px;height:3px;margin-right:5px;vertical-align:middle}
-.grp{margin-bottom:10px}.grp h3{font-size:14px;margin:0 0 6px;color:var(--mut);font-weight:600}
-.row{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}.row:first-of-type{border-top:0}
-.row label{flex:1}.row select{font:inherit;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);max-width:48%}
-.pend{font-size:12px;color:var(--warn)}
-details summary{cursor:pointer;color:var(--mut)}
-#ev{font-size:13px;color:var(--mut);margin:0;padding-left:18px}
-#toast{position:fixed;left:16px;right:16px;bottom:16px;max-width:600px;margin:auto;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;display:none}
-.note{font-size:12px;color:var(--mut)}
-#alarm div{background:var(--bad);color:#fff;border-radius:12px;padding:12px;margin-bottom:10px;font-weight:600}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.chip{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:13px}
-.chip b{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut);margin-right:6px}.chip.on b{background:var(--ok)}
-</style></head><body>
-<header><h1>🔥 Mój piec</h1><span id="status">łączenie…</span></header>
-<main>
-<div id="alarm"></div>
-<div class="grid" id="tiles"></div>
-<div class="chips" id="stany"></div>
-<p class="note" id="opal"></p>
-<h2>Wykres</h2>
-<div class="card"><div class="tabs" id="rng"><button data-h="1">1 h</button> <button data-h="6">6 h</button> <button data-h="24" class="on">24 h</button> <button data-h="168">7 dni</button></div>
-<svg id="ch" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
-<div class="leg"><span><i style="background:var(--c1)"></i>Kocioł</span><span><i style="background:var(--c2)"></i>CWU</span><span><i style="background:var(--c3)"></i>Spaliny</span></div></div>
-<h2>Nastawy</h2>
-<p class="note">Zmiana trafia do sterownika przy jego następnym połączeniu (kilka sekund) i jest potwierdzana.</p>
-<div id="set"></div>
-<h2>Zdarzenia</h2><div class="card"><ul id="ev"></ul></div>
-<h2></h2><details class="card"><summary>Inne wartości ze sterownika (jeszcze nienazwane)</summary><p class="note" id="unk"></p></details>
-</main><div id="toast"></div>
-<script>
-let H=24, sel={};
-const $=s=>document.querySelector(s);
-function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',3500)}
-async function stan(){
- let d; try{d=await (await fetch('/api/stan')).json()}catch(e){$('#status').textContent='brak połączenia z serwerem';return}
- const age=d.czas?d.teraz-d.czas:null, st=$('#status');
- st.className=age===null||age>120?'stary':'';
- st.innerHTML=age===null?'<b>●</b> sterownik jeszcze się nie połączył':`<b>●</b> odczyt ${age<60?age+' s':Math.round(age/60)+' min'} temu · tryb ${d.tryb}`;
- $('#tiles').innerHTML=d.pomiary.map((p,i)=>`<div class="card tile${i<2?' main':''}"><div class="n">${p.nazwa}</div><div class="v">${p.wartosc===null?'–':p.wartosc}<small> ${p.jedn}</small></div></div>`).join('');
- $('#alarm').innerHTML=d.alarm?`<div>⚠ Er${d.alarm.kod}: ${d.alarm.opis}</div>`:'';
- $('#stany').innerHTML=d.stany.map(x=>`<span class="chip${x.wartosc?' on':''}"><b></b>${x.nazwa}: ${x.wartosc===null?'?':x.wartosc?'pracuje':'stoi'}${x.info&&x.wartosc?' '+x.info:''}</span>`).join('');
- $('#opal').textContent=d.opal_do?`Opał wystarczy do: ${d.opal_do}`:'';
- const box=$('#set'); const groups={};
- d.nastawy.forEach(n=>(groups[n.grupa]=groups[n.grupa]||[]).push(n));
- if(!box.dataset.built||document.activeElement.tagName!=='SELECT'){
-  box.innerHTML=Object.entries(groups).map(([g,list])=>`<div class="card grp"><h3>${g}</h3>${list.map(n=>{
-    const opts=[];for(let v=n.min;v<=n.max;v++){if(n.opcje&&!(v in n.opcje))continue;opts.push(`<option value="${v}"${v===n.wartosc?' selected':''}>${n.opcje?n.opcje[v]:v+(n.jedn?' '+n.jedn:'')}</option>`)}
-    const pend=n.oczekuje!==null&&n.oczekuje!==undefined?`<div class="pend">⏳ wysyłam: ${n.opcje?n.opcje[n.oczekuje]:n.oczekuje+' '+n.jedn}</div>`:'';
-    return `<div class="row"><label for="s_${n.klucz}">${n.nazwa}${pend}</label><select id="s_${n.klucz}" data-k="${n.klucz}"${n.wartosc===null?' disabled':''}>${n.wartosc===null?'<option>–</option>':''}${opts.join('')}</select></div>`}).join('')}</div>`).join('');
-  box.dataset.built=1;
- }
- $('#ev').innerHTML=d.zdarzenia.length?d.zdarzenia.map(e=>`<li>${e.t} ${e.msg}</li>`).join(''):'<li>brak</li>';
- $('#unk').textContent=Object.entries(d.nieznane).map(([k,v])=>k+'='+v).join(', ');
-}
-document.addEventListener('change',async e=>{
- const k=e.target.dataset.k;if(!k)return;
- const label=e.target.closest('.row').querySelector('label').firstChild.textContent;
- const txt=e.target.options[e.target.selectedIndex].text;
- if(!confirm(`Zmienić „${label}” na ${txt}?`)){stan();return}
- const r=await fetch('/api/ustaw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({klucz:k,wartosc:+e.target.value})});
- const j=await r.json(); toast(j.ok?(j.info||'Wysłano - czekam na potwierdzenie sterownika'):j.blad); e.target.blur(); stan();
-});
-async function wykres(){
- const d=await (await fetch('/api/historia?h='+H)).json(), svg=$('#ch');
- if(d.ts.length<2){svg.innerHTML='<text x="300" y="110" text-anchor="middle" fill="currentColor" opacity=".5">za mało danych</text>';return}
- const all=[...d.A2,...d.A3,...d.A15].filter(v=>v!==null);let lo=Math.floor(Math.min(...all)/10)*10,hi=Math.ceil(Math.max(...all)/10)*10;if(hi-lo<20)hi=lo+20;
- const t0=d.ts[0],t1=d.ts[d.ts.length-1],X=t=>(t-t0)/(t1-t0||1)*560+34,Y=v=>200-(v-lo)/(hi-lo)*185;
- let g='';for(let v=lo;v<=hi;v+=10){g+=`<line x1="34" x2="600" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" opacity=".12"/><text x="0" y="${Y(v)+4}" font-size="11" fill="currentColor" opacity=".6">${v}°</text>`}
- const line=(k,c)=>{let p='';d[k].forEach((v,i)=>{if(v!==null)p+=(p?'L':'M')+X(d.ts[i]).toFixed(1)+','+Y(v).toFixed(1)});return `<path d="${p}" fill="none" stroke="var(${c})" stroke-width="2" vector-effect="non-scaling-stroke"/>`};
- const f=t=>{const x=new Date(t*1000);return H>24?x.toLocaleDateString('pl',{day:'numeric',month:'numeric'}):x.toLocaleTimeString('pl',{hour:'2-digit',minute:'2-digit'})};
- g+=`<text x="34" y="216" font-size="11" fill="currentColor" opacity=".6">${f(t0)}</text><text x="600" y="216" font-size="11" text-anchor="end" fill="currentColor" opacity=".6">${f(t1)}</text>`;
- svg.innerHTML=g+line('A15','--c3')+line('A3','--c2')+line('A2','--c1');
-}
-$('#rng').onclick=e=>{if(!e.target.dataset.h)return;H=+e.target.dataset.h;document.querySelectorAll('#rng button').forEach(b=>b.classList.toggle('on',b===e.target));wykres()};
-stan();wykres();setInterval(stan,5000);setInterval(wykres,60000);
-</script></body></html>"""
 
 if __name__ == "__main__":
     main()

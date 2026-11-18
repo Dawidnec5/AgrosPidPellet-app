@@ -26,33 +26,47 @@ zapyta o adres ekotlownia.pl, dostanie adres Twojego komputera i połączy się 
 z serwerem producenta. Na etapie 1 komputer tylko przekazuje ruch dalej i zapisuje go do pliku.
 Sterownik pracuje wtedy dokładnie tak jak zwykle.
 
-## Aplikacja (wersja 1)
+## Aplikacja
 
-`piec_serwer.py` to Twój własny serwer zamiast ekotlownia.pl. Telefon w domowym Wi-Fi otwiera
-stronę **http://ADRES-LAPTOPA/** (adres pokazuje okno programu, np. `http://192.168.1.50/`).
+`piec_serwer.py` to Twój własny serwer zamiast ekotlownia.pl, a `www/` to aplikacja na telefon.
+Otwierasz ją pod adresem **http://ADRES-LAPTOPA/** (adres pokazuje okno programu, np. `http://192.168.1.50/`).
 
-Co pokazuje i co pozwala zrobić:
-- temperatury kotła, CWU, spalin, podajnika i zaworu; opał w zbiorniku, spalanie dobowe, do
-  kiedy wystarczy opału,
-- wykres z 1 h, 6 h, 24 h i 7 dni (zapisywany w `piec.db`),
-- zmianę nastaw: temperatury kotła dzień/noc, CWU (tryb, temperatura, histereza, priorytet),
-  pompy C.O. i cyrkulacji, zaworu, podawania i dmuchawy. Każda zmiana wymaga potwierdzenia
-  na telefonie, a potem sterownik ją potwierdza (wpis „✓” w zdarzeniach). Zakresy są takie
-  same jak na ekotlownia.pl.
+Zakładki:
+- **Pulpit**: temperatura kotła na pierścieniu z zaznaczoną temperaturą zadaną, wykres
+  z 6 h, CWU z szybką zmianą temperatury zadanej, podajnik, zawór, opał (z paskiem i czasem
+  „wystarczy do”), spalanie, cyrkulacja, sezon; alarmy Er na czerwono.
+- **Wykresy**: 1 h – 30 dni; kocioł, CWU, spaliny, podajnik, zawór; praca wentylatora
+  i pomp. Po dotknięciu wykresu widać wartości z danej chwili.
+- **Nastawy**: wszystkie nastawy z ekotlownia.pl. Zmiany zbierają się na pasku „Zapisz”
+  i idą do sterownika razem, po potwierdzeniu (i haśle, jeśli jest ustawione).
+- **Harmonogram**: godziny dla kotła, pompy C.O., CWU, zaworu i cyrkulacji; osobno
+  pon–pt, sobota i niedziela.
+- **Zdarzenia**: historia zmian (✓ potwierdzone przez sterownik, ✗ odrzucone) i alarmów.
+
+**Hasło:** Nastawy → Bezpieczeństwo → Ustaw. Podgląd działa bez hasła, ale zmiany już nie.
+
+**Ikona na telefonie:** w przeglądarce wybierz menu → „Dodaj do ekranu głównego”.
 
 Uruchamianie (Windows):
-- **`START_APLIKACJA_WINDOWS.bat`** (tryb proxy): dane idą też do ekotlownia.pl, więc strona
-  producenta działa jak dotąd, dopóki masz abonament.
+- **`START_APLIKACJA_WINDOWS.bat`** (tryb proxy): dane idą też do ekotlownia.pl.
 - **`START_APLIKACJA_BEZ_EKOTLOWNI.bat`** (tryb sam): bez ekotlownia.pl i bez abonamentu.
-- Najpierw zamknij okno podsłuchu, bo oba programy używają tych samych portów (53 i 80).
-- Ustawienia sterownika (kod 0104) zostają jak przy podsłuchu: DNS = adres laptopa.
+- Najpierw zamknij okno podsłuchu, bo oba programy używają portów 53 i 80.
+- Historia jest w pliku `piec.db`. Przy aktualizacji aplikacji nie kasuj go.
 
-Ograniczenia wersji 1:
-- działa tylko w domowej sieci; dostęp spoza domu to kolejny krok,
-- każdy w domowym Wi-Fi może otworzyć stronę i zmieniać nastawy,
+### Dostęp spoza domu (Tailscale, za darmo)
+
+1. Załóż konto na tailscale.com i zainstaluj Tailscale **na laptopie** (Windows) i **na telefonie**,
+   logując się tym samym kontem.
+2. W aplikacji Tailscale na laptopie odczytaj jego adres `100.x.y.z`.
+3. Na telefonie (także na danych komórkowych) otwórz `http://100.x.y.z/`.
+
+Router zostaje bez zmian i nic nie jest wystawione do internetu. Aplikację widzą tylko Twoje
+urządzenia zalogowane w Tailscale. Mimo to ustaw hasło.
+
+Ograniczenia:
 - laptop musi być włączony; docelowo lepiej sprawdzi się Raspberry Pi,
-- stany pomp, temperatura zewnętrzna i numer błędu są jeszcze nienazwane (lista „Inne
-  wartości” na dole strony). Rozpoznamy je, gdy kocioł będzie pracował.
+- stan podajnika nie jest dostępny (sterownik go nie wysyła); część pól `A*` jest jeszcze
+  nienazwana (Zdarzenia → Informacje).
 
 Opis protokołu: [PROTOKOL.md](PROTOKOL.md).
 
