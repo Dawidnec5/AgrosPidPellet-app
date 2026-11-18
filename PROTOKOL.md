@@ -53,6 +53,12 @@ A37=15
 - Serwer wysłał też `L2=0` i `L3=0`, ale sterownik ich nie zmienił (raportuje dalej 16 i 14).
   Albo są tylko do odczytu, albo sterownik odrzuca wartości spoza zakresu.
 
+## Zapis nastaw: potwierdzony na prawdziwym sterowniku (18.11.2026)
+
+`piec_serwer.py` wysłał pełny zestaw nastaw (format jak ekotlownia.pl) ze zmienioną jedną
+wartością. Sterownik przyjął zmianę i potwierdził ją w ciągu 1–7 s:
+`B2` (kocioł noc) 59 → 52 °C oraz `I3` (zawór dzień) 35 → 30 °C.
+
 ## Nastawy: mapa POTWIERDZONA (strona ekotlownia.pl ↔ dane sterownika)
 
 Wartości ze strony z 18.11 zgadzają się 1:1 z polami wysyłanymi przez sterownik.
