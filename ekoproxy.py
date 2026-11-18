@@ -403,9 +403,45 @@ def show(path):
                 print(f"{t} info: {r.get('opis', r)}")
 
 
+async def scan(host, ports, conc=16, timeout=1.0):
+    """Delikatny skan TCP (mało połączeń naraz - sterownik ma słaby moduł sieciowy)."""
+    sem = asyncio.Semaphore(conc)
+    found = []
+
+    async def probe(port):
+        async with sem:
+            try:
+                r, w = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+            except (OSError, asyncio.TimeoutError):
+                return
+            banner = b""
+            try:
+                if port in (80, 8080, 8000, 8888, 81):
+                    w.write(b"GET / HTTP/1.0\r\nHost: " + host.encode() + b"\r\n\r\n")
+                    await w.drain()
+                banner = await asyncio.wait_for(r.read(300), 2)
+            except (OSError, asyncio.TimeoutError):
+                pass
+            w.close()
+            found.append(port)
+            print(f"  OTWARTY port {port}: {printable(banner[:120]) or '(brak powitania)'}", flush=True)
+
+    plist = parse_ports(ports)
+    print(f"Skanuję {host}: {len(plist)} portów TCP (może potrwać kilka minut)...", flush=True)
+    t0 = datetime.datetime.now()
+    await asyncio.gather(*(probe(p) for p in plist))
+    sec = (datetime.datetime.now() - t0).seconds
+    print(f"Koniec po {sec} s. Otwarte porty: {sorted(found) or 'BRAK'}")
+
+
 def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "pokaz":
         show(sys.argv[2])
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "skan":
+        if sys.platform == "win32":
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        asyncio.run(scan(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "1-10000"))
         return
     ap = argparse.ArgumentParser(description="Podsłuch protokołu sterownik <-> ekotlownia.pl")
     ap.add_argument("--spoof", default=DEFAULT_PATTERNS,
