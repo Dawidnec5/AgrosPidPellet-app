@@ -260,10 +260,37 @@ class App:
         self.log.write("koniec", f"TCP  #{cid} zakończone", id=cid)
 
 
+def keep_awake():
+    """Windows: nie usypiaj komputera, dopóki program działa (zamknięcie klapy nadal może uśpić)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+            print("Usypianie komputera wyłączone na czas działania programu.")
+        except (OSError, AttributeError):
+            pass
+
+
+def all_ipv4():
+    try:
+        ips = {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+    except OSError:
+        ips = set()
+    return sorted(ip for ip in ips if not ip.startswith("127."))
+
+
 async def run(args):
     app = App(args)
     loop = asyncio.get_running_loop()
-    print(f"ekoproxy - ten komputer: {app.my_ip}   log: {app.log.path}")
+    print("=" * 70)
+    print(f"  ADRES TEGO KOMPUTERA (wpisz go jako DNS w sterowniku, kod 0104):  {app.my_ip}")
+    print("=" * 70)
+    others = [ip for ip in all_ipv4() if ip != app.my_ip]
+    if others:
+        print(f"  (inne karty sieciowe: {', '.join(others)} - jeśli sterownik jest w innej")
+        print("   podsieci niż adres powyżej, uruchom ponownie z --ip WŁAŚCIWY_ADRES)")
+    print(f"Log: {app.log.path}")
+    keep_awake()
     print(f"Przekierowywane nazwy: {', '.join(app.patterns)}   (inne pytania -> {args.dns_upstream})")
 
     if not args.no_dns:

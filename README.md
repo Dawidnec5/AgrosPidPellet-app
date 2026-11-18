@@ -34,12 +34,20 @@ zadanej. Bez abonamentu też coś zobaczymy (sterownik wysyła swoje dane przy �
 
 1. **Komputer** w tej samej sieci domowej co sterownik (Windows, Linux albo Raspberry Pi)
    z Pythonem 3.8 lub nowszym. Dobrze jest dać mu stały adres IP w routerze (rezerwacja DHCP).
-2. Skopiuj folder `piec/` na komputer i uruchom:
-   - Windows: kliknij `START_PODSLUCH_WINDOWS.bat` prawym przyciskiem → **Uruchom jako
-     administrator**. Gdy Zapora Windows zapyta, zezwól na dostęp w **sieciach prywatnych**.
-   - Linux/RPi: `sudo python3 ekoproxy.py`
+2. Skopiuj folder `piec/` na komputer (albo rozpakuj `Piec_Podsluch.zip`) i uruchom:
+   - **Windows:** kliknij dwukrotnie **`START_PODSLUCH_WINDOWS.bat`** i zgódź się na
+     uprawnienia administratora („Czy zezwolić tej aplikacji…” → Tak). Program sam:
+     - znajdzie Pythona (jeśli go nie ma, poda link do instalacji),
+     - doda regułę zapory, która wpuszcza **tylko urządzenia z Twojej sieci domowej**,
+       i usunie ją po zakończeniu,
+     - nie pozwoli laptopowi zasnąć, dopóki działa.
 
-   Na górze program wypisze adres komputera, np. `ten komputer: 192.168.1.50`.
+     **Laptop podłącz do ładowarki i nie zamykaj klapy**, bo zamknięta klapa może go uśpić.
+     Laptop może być na Wi-Fi, byle w tej samej sieci co sterownik (nie w sieci „dla gości”).
+   - Linux/RPi/Mac: `sudo python3 ekoproxy.py`
+
+   Na górze okna program wypisze dużymi literami adres komputera, np. `192.168.1.50`.
+
 3. **Na sterowniku**, menu → kod **0104**. Zapisz obecne wartości na kartce, żeby móc
    wrócić do ustawień.
    - Najpierw przy **DHCP = TAK** odczytaj, jaki adres dostał sterownik. Router zwykle
@@ -76,10 +84,11 @@ zadanej. Bez abonamentu też coś zobaczymy (sterownik wysyła swoje dane przy �
 
 | Objaw | Co zrobić |
 |---|---|
-| `nie mogę otworzyć portu 53` | Uruchom jako administrator (Windows) lub przez `sudo` (Linux). |
-| Brak linii `DNS ...` po restarcie sterownika | Sprawdź DNS w 0104 i zaporę Windows (sieć **prywatna**, nie publiczna). |
-| Są linie `DNS`, ale żadna nie ma `PRZEKIEROWANO` | Serwer ma inną nazwę. Zobacz w logu, o co pyta sterownik, i uruchom z `--spoof NAZWA`, albo z `--spoof "*"` (przekierowuje wszystko). |
-| Jest `PRZEKIEROWANO`, ale brak `NOWE POŁĄCZENIE` | Sterownik używa portu spoza listy. Uruchom z `--ports 1-65535` (na Windows może to chwilę trwać). |
+| `nie mogę otworzyć portu 53` | Windows: zgódź się na uprawnienia administratora. Jeśli dalej to samo, coś innego zajmuje port 53 (np. „Udostępnianie połączenia internetowego”, Docker). Linux: `sudo`. |
+| Brak linii `DNS ...` po restarcie sterownika | Sprawdź DNS w 0104 (adres z okna programu). Jeśli kiedyś przy pytaniu zapory kliknięto „Anuluj”, Windows mógł zablokować Pythona: Panel sterowania → Zapora Windows Defender → Zezwalaj aplikacji… → zaznacz Python (Prywatne i Publiczne). |
+| Są linie `DNS`, ale żadna nie ma `PRZEKIEROWANO` | Serwer ma inną nazwę. Uruchom **`START_PODSLUCH_SZEROKI.bat`** (przekierowuje wszystkie nazwy). |
+| Jest `PRZEKIEROWANO`, ale brak `NOWE POŁĄCZENIE` | Sterownik używa portu spoza listy. Uruchom **`START_PODSLUCH_SZEROKI.bat`** (porty 1–10000). |
+| Sterownik stracił internet po wyłączeniu laptopa | Tak ma być: DNS wskazuje na laptopa. Przywróć w 0104 DHCP = TAK. |
 | Brak jakichkolwiek pytań DNS, a sterownik dalej łączy się z serwerem | Adres serwera jest wpisany na stałe w firmware. Wtedy potrzebny jest inny sposób (np. Raspberry Pi jako brama). Napisz, a przygotuję go. |
 | `UWAGA: ruch szyfrowany (TLS)` | Protokół jest szyfrowany i podsłuch będzie trudniejszy. Wyślij log, ocenię, co da się zrobić. |
 
