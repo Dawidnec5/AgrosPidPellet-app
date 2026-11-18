@@ -157,6 +157,7 @@ class App:
         self.log = Log(os.path.join(args.logdir, f"podsluch_{stamp}.jsonl"))
         self.upstream_host = args.upstream_host
         self.upstream_ip = None
+        self.upstream_pref = False
         self.conn_no = 0
 
     def should_spoof(self, name):
@@ -190,8 +191,15 @@ class App:
             self.log.write("info", f"Nie udało się ustalić prawdziwego IP {name}: {e}", nazwa=name)
             return
         ip = infos[0][4][0]
+        # W trybie '*' sterownik może pytać też o inne nazwy (np. serwer czasu). Nazwa wyglądająca
+        # na serwer producenta ma pierwszeństwo i nie zostanie nadpisana przez inną.
+        preferred = any(p in name for p in DEFAULT_PATTERNS.split(","))
+        if self.upstream_pref and not preferred:
+            self.log.write("info", f"Inna nazwa: {name} = {ip} (zostaje {self.upstream_host})",
+                           nazwa=name, ip=ip)
+            return
         if ip != self.upstream_ip:
-            self.upstream_ip, self.upstream_host = ip, name
+            self.upstream_ip, self.upstream_host, self.upstream_pref = ip, name, preferred
             self.log.write("info", f"Prawdziwy serwer: {name} = {ip}", nazwa=name, ip=ip)
 
     async def resolve_upstream(self):
