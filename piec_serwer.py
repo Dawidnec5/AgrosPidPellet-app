@@ -50,7 +50,17 @@ POMIARY = {
     "A6": ("Opał w zbiorniku", 1, "kg"),
     "AA": ("Spalanie 24 h", 0.1, "kg"),
 }
-ZNANE_A = set(POMIARY) | {"A0", "A7", "A8", "A12"}
+# Pompy: 0 = pracuje, 1 = stoi (odwrócona logika; potwierdzone przez projekt
+# github.com/ImixVega/argos-pid-esphome i zgodne z ekotlownia.pl z 18.11.2026)
+POMPY = {"AC": "Pompa C.O.", "AD": "Pompa CWU", "AE": "Pompa cyrkulacji"}
+# AB = numer błędu (Er), tabela jak w instrukcji / argos-pid-esphome
+BLEDY = {0: "OK", 1: "Błąd czujnika kotła", 2: "Błąd czujnika podajnika", 3: "Błąd czujnika CWU",
+         4: "Błąd czujnika zaworu mieszającego", 5: "Błąd zapisanych ustawień", 6: "Błąd zegara RTC",
+         7: "Błąd zapisanych ustawień", 8: "Piec przegrzany", 9: "Przegrzanie podajnika",
+         10: "STB - zadziałało zabezpieczenie", 11: "Kocioł wygaszony", 12: "Kończy się opał w zasobniku",
+         13: "Błąd synchronizacji z siecią", 14: "Otwarta klapa zasobnika", 15: "Błąd czujnika zewnętrznego",
+         16: "Błąd czujnika spalin", 17: "Trwa rozpalanie/wygaszanie"}
+ZNANE_A = set(POMIARY) | set(POMPY) | {"A0", "A7", "A8", "A12", "AB", "AF"}
 DNI = ["niedziela", "poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 
 # Nastawy, które wolno zmieniać: klucz -> (grupa, nazwa, min, max, opcje|None, jednostka)
@@ -75,6 +85,9 @@ NASTAWY = {
     "I2": ("Zawór", "Tryb pracy", 0, 1, {0: "Stały, wyłączony", 1: "Mieszacz"}, ""),
     "I3": ("Zawór", "Temperatura zadana - dzień", 20, 70, None, "°C"),
     "I4": ("Zawór", "Temperatura zadana - noc", 20, 70, None, "°C"),
+    "K3": ("Lato/zima", "Tryb", 0, 2, {0: "Stały, zima", 1: "Automatyczny", 2: "Stały, lato"}, ""),
+    "K4": ("Lato/zima", "Wymuszenie trybu zimowego - czas", 2, 20, None, "h"),
+    "K5": ("Lato/zima", "Wymuszenie trybu zimowego", 0, 1, {0: "Zatrzymane", 1: "Odliczanie"}, ""),
     "C1": ("Podawanie i dmuchawa", "Czas podawania", 5, 20, None, "s"),
     "C2": ("Podawanie i dmuchawa", "Czas przerwy", 3, 220, None, "s"),
     "C3": ("Podawanie i dmuchawa", "Obroty maksymalne", 1, 98, None, ""),
@@ -124,6 +137,13 @@ class Piec(ek.App):
         self.db.execute("INSERT INTO pomiary VALUES (?, ?)", (now, json.dumps(data)))
         self.db.commit()
         self.check_pending(data)
+        try:
+            kod = int(data.get("AB", "0").strip(), 16)
+        except ValueError:
+            kod = 0
+        if kod != getattr(self, "last_alarm", 0):
+            self.event(f"⚠ ALARM Er{kod}: {BLEDY.get(kod, 'nieznany')}" if kod else "Alarm skasowany")
+            self.last_alarm = kod
 
         upstream = None
         if self.args.tryb == "proxy":
@@ -218,9 +238,16 @@ class Piec(ek.App):
             nastawy.append({"klucz": k, "grupa": grp, "nazwa": name, "min": lo, "max": hi,
                             "opcje": opts, "jedn": unit, "wartosc": self.val(k),
                             "oczekuje": self.pending.get(k, {}).get("wartosc")})
+        stany = [{"nazwa": n, "wartosc": None if self.val(k) is None else self.val(k) == 0}
+                 for k, n in POMPY.items()]
+        c9, af = self.val("C9"), self.val("AF")
+        stany.append({"nazwa": "Wentylator", "wartosc": None if c9 is None else bool(c9 and af),
+                      "info": f"{af if c9 else 0} %" if af is not None and c9 is not None else ""})
+        kod = self.val("AB")
+        alarm = None if not kod else {"kod": kod, "opis": BLEDY.get(kod, "Nieznany błąd")}
         nieznane = {k: self.val(k) for k in self.state if k.startswith("A") and k not in ZNANE_A}
         return {"czas": self.state_ts, "teraz": int(time.time()), "tryb": self.args.tryb,
-                "pomiary": pomiary, "opal_do": opal_do, "nastawy": nastawy,
+                "pomiary": pomiary, "opal_do": opal_do, "stany": stany, "alarm": alarm, "nastawy": nastawy,
                 "nieznane": nieznane, "zdarzenia": self.history}
 
     def api_historia(self, godz):
@@ -390,10 +417,15 @@ details summary{cursor:pointer;color:var(--mut)}
 #ev{font-size:13px;color:var(--mut);margin:0;padding-left:18px}
 #toast{position:fixed;left:16px;right:16px;bottom:16px;max-width:600px;margin:auto;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;display:none}
 .note{font-size:12px;color:var(--mut)}
+#alarm div{background:var(--bad);color:#fff;border-radius:12px;padding:12px;margin-bottom:10px;font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.chip{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:5px 12px;font-size:13px}
+.chip b{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut);margin-right:6px}.chip.on b{background:var(--ok)}
 </style></head><body>
 <header><h1>🔥 Mój piec</h1><span id="status">łączenie…</span></header>
 <main>
+<div id="alarm"></div>
 <div class="grid" id="tiles"></div>
+<div class="chips" id="stany"></div>
 <p class="note" id="opal"></p>
 <h2>Wykres</h2>
 <div class="card"><div class="tabs" id="rng"><button data-h="1">1 h</button> <button data-h="6">6 h</button> <button data-h="24" class="on">24 h</button> <button data-h="168">7 dni</button></div>
@@ -415,6 +447,8 @@ async function stan(){
  st.className=age===null||age>120?'stary':'';
  st.innerHTML=age===null?'<b>●</b> sterownik jeszcze się nie połączył':`<b>●</b> odczyt ${age<60?age+' s':Math.round(age/60)+' min'} temu · tryb ${d.tryb}`;
  $('#tiles').innerHTML=d.pomiary.map((p,i)=>`<div class="card tile${i<2?' main':''}"><div class="n">${p.nazwa}</div><div class="v">${p.wartosc===null?'–':p.wartosc}<small> ${p.jedn}</small></div></div>`).join('');
+ $('#alarm').innerHTML=d.alarm?`<div>⚠ Er${d.alarm.kod}: ${d.alarm.opis}</div>`:'';
+ $('#stany').innerHTML=d.stany.map(x=>`<span class="chip${x.wartosc?' on':''}"><b></b>${x.nazwa}: ${x.wartosc===null?'?':x.wartosc?'pracuje':'stoi'}${x.info&&x.wartosc?' '+x.info:''}</span>`).join('');
  $('#opal').textContent=d.opal_do?`Opał wystarczy do: ${d.opal_do}`:'';
  const box=$('#set'); const groups={};
  d.nastawy.forEach(n=>(groups[n.grupa]=groups[n.grupa]||[]).push(n));

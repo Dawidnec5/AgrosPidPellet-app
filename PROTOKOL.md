@@ -106,6 +106,31 @@ Wartości ze strony z 18.11 zgadzają się 1:1 z polami wysyłanymi przez sterow
 | J17, J18, J19 | cyrkulacja | FFFFFF ×3 |
 | J1C, J1D, J1E | regulator pokojowy (`J1B` = aktywność 0, `J1F` = wskaźnik 1) | FFFFFF ×3 |
 
+## Pola z projektu argos-pid-esphome
+
+Niezależne rozpracowanie tego samego sterownika:
+[github.com/ImixVega/argos-pid-esphome](https://github.com/ImixVega/argos-pid-esphome)
+(GPL-3.0, wersja 1.2 z 12.11.2026). Ich mapa zgadza się z naszą (B2/B3, C1–C5, F, G, H, I).
+Dokładają:
+
+| Klucz | Znaczenie |
+|---|---|
+| AB | numer błędu Er (hex): 0 OK, 8 piec przegrzany, A=10 STB, B=11 kocioł wygaszony, C=12 kończy się opał, E=14 otwarta klapa zasobnika… (pełna tabela Er0–Er17 w `piec_serwer.py`) |
+| AC / AD / AE | pompa C.O. / CWU / cyrkulacji: **0 = pracuje, 1 = stoi** |
+| AF | wysterowanie zadane wentylatora [%] |
+| C9 | zezwolenie pracy wentylatora (na ekotlownia.pl „stan palnika”: 0 zatrzymany, 1 pracuje) |
+| E1–E5 | podtrzymanie: czas pracy, czas pauzy, nadmuch, podaj co N cykli, krotność podania |
+| K3 | lato/zima: 0 stały zima, 1 automatyczny, 2 stały lato (zgodne z formularzem ekotlownia.pl) |
+| K4 | czas wymuszenia trybu zimowego [h] |
+| K5 | wymuszenie: 0 zatrzymane, 1 odliczanie |
+
+Ich obserwacje zgodne z naszymi: zapis wymaga pełnego zestawu nastaw (częściowy był
+odrzucany), a cyfry a–f muszą być **małymi literami** (wielkie litery sterownik czyta błędnie,
+np. `2C` → 2).
+
+Różnica: u nich (inna wersja firmware) zwykły POST nie zawiera L2/L3/J1C–J1E. U nas (Argos 2.99)
+zawiera, a A10 to u nich spaliny ×0,1. U nas spaliny to **A15** (potwierdzone ze stroną), a A10 = 0.
+
 ## Pomiary (grupa A): do potwierdzenia
 
 Strona pobiera stan z `/sterownik-7-status/<nr>` (JSON z nazwami). Pokazuje: temperatury
