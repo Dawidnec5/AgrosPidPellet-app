@@ -25,6 +25,8 @@ import os
 import socket
 import struct
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 DEFAULT_PATTERNS = "ekotlownia,bolecki,technix"
 # Porty najczęściej używane przez małe urządzenia IoT. Zakres można zmienić opcją --ports.
@@ -73,15 +75,17 @@ class Log:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.path = path
         self.f = open(path, "a", encoding="utf-8")
+        self.lock = threading.Lock()
 
     def write(self, kind, msg=None, **rec):
         rec = {"t": now(), "typ": kind, **rec}
         if kind == "info" and msg:
             rec["opis"] = msg
-        self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        self.f.flush()
-        if msg:
-            print(f"[{rec['t'][11:23]}] {msg}", flush=True)
+        with self.lock:
+            self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            self.f.flush()
+            if msg:
+                print(f"[{rec['t'][11:23]}] {msg}", flush=True)
 
 
 # ---------------------------------------------------------------- DNS
@@ -116,34 +120,89 @@ def dns_answer(pkt: bytes, q_end: int, ip: str, qtype: int) -> bytes:
     return hdr + pkt[12:q_end] + ans
 
 
-class DnsServer(asyncio.DatagramProtocol):
-    def __init__(self, app):
-        self.app = app
+AUTOTEST_NAME = "autotest.ekotlownia.pl"
 
-    def connection_made(self, transport):
-        self.transport = transport
 
-    def datagram_received(self, data, addr):
-        asyncio.ensure_future(self.handle(data, addr))
+def dns_query(name: str) -> bytes:
+    q = b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0"
+    return struct.pack(">HHHHHH", 0xBEEF, 0x0100, 1, 0, 0, 0) + q + struct.pack(">HH", 1, 1)
 
-    async def handle(self, data, addr):
+
+def udp_socket():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if hasattr(socket, "SIO_UDP_CONNRESET"):
+        # Windows: bez tego jeden komunikat ICMP "port niedostępny" psuje dalszy odbiór
+        sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+    return sock
+
+
+class DnsServer(threading.Thread):
+    """Serwer DNS w osobnym wątku na zwykłym gnieździe (pewniejsze na Windows niż asyncio)."""
+
+    def __init__(self, app, loop, bind):
+        super().__init__(daemon=True)
+        self.app, self.loop = app, loop
+        self.sock = udp_socket()
+        self.sock.bind((bind, 53))
+        self.pool = ThreadPoolExecutor(8)
+
+    def run(self):
+        while True:
+            try:
+                data, addr = self.sock.recvfrom(4096)
+            except ConnectionResetError:
+                continue
+            except OSError as e:
+                self.app.log.write("info", f"DNS błąd odbioru: {e}")
+                continue
+            try:
+                self.handle(data, addr)
+            except Exception as e:  # pojedyncze złe zapytanie nie może zatrzymać serwera
+                self.app.log.write("info", f"DNS błąd: {e!r}")
+
+    def handle(self, data, addr):
         q = dns_parse_question(data)
         if not q:
             return
         name, qtype, q_end = q
         app = self.app
         if app.should_spoof(name):
-            self.transport.sendto(dns_answer(data, q_end, app.my_ip, qtype), addr)
+            self.sock.sendto(dns_answer(data, q_end, app.my_ip, qtype), addr)
             if qtype == 1:
                 app.log.write("dns", f"DNS  {addr[0]} pyta o {name}  ->  PRZEKIEROWANO na {app.my_ip}",
                               klient=addr[0], nazwa=name, qtype=qtype, przekierowano=True)
-                await app.learn_upstream(name)
+                if name != AUTOTEST_NAME:
+                    asyncio.run_coroutine_threadsafe(app.learn_upstream(name), self.loop)
             return
         app.log.write("dns", f"DNS  {addr[0]} pyta o {name} (typ {qtype}) - przekazuję dalej",
                       klient=addr[0], nazwa=name, qtype=qtype, przekierowano=False)
-        reply = await app.forward_dns(data)
-        if reply:
-            self.transport.sendto(reply, addr)
+        self.pool.submit(self.forward, data, addr)
+
+    def forward(self, data, addr):
+        s = udp_socket()
+        s.settimeout(3)
+        try:
+            s.sendto(data, (self.app.args.dns_upstream, 53))
+            reply, _ = s.recvfrom(4096)
+            self.sock.sendto(reply, addr)
+        except OSError:
+            pass
+        finally:
+            s.close()
+
+
+def dns_selftest(ip):
+    """Wyślij zapytanie do własnego serwera DNS i sprawdź odpowiedź."""
+    s = udp_socket()
+    s.settimeout(2)
+    try:
+        s.sendto(dns_query(AUTOTEST_NAME), (ip, 53))
+        reply, _ = s.recvfrom(4096)
+        return len(reply) >= 16 and socket.inet_ntoa(reply[-4:]) == ip, None
+    except OSError as e:
+        return False, e
+    finally:
+        s.close()
 
 
 # ---------------------------------------------------------------- TCP proxy
@@ -162,24 +221,6 @@ class App:
 
     def should_spoof(self, name):
         return "*" in self.patterns or any(p in name for p in self.patterns)
-
-    async def forward_dns(self, data):
-        loop = asyncio.get_running_loop()
-        fut = loop.create_future()
-
-        class P(asyncio.DatagramProtocol):
-            def datagram_received(self, d, a):
-                if not fut.done():
-                    fut.set_result(d)
-
-        transport, _ = await loop.create_datagram_endpoint(P, remote_addr=(self.args.dns_upstream, 53))
-        try:
-            transport.sendto(data)
-            return await asyncio.wait_for(fut, 3)
-        except asyncio.TimeoutError:
-            return None
-        finally:
-            transport.close()
 
     async def learn_upstream(self, name):
         """Ustal prawdziwy adres serwera producenta (przez zwykły DNS)."""
@@ -303,12 +344,21 @@ async def run(args):
 
     if not args.no_dns:
         try:
-            await loop.create_datagram_endpoint(lambda: DnsServer(app), local_addr=(args.bind, 53))
+            DnsServer(app, loop, args.bind).start()
             print("DNS: nasłuch UDP 53 - OK")
         except OSError as e:
             print(f"DNS: nie mogę otworzyć portu 53 ({e}).\n"
                   "     Windows: uruchom jako administrator. Linux/RPi: sudo.")
             return
+        ok_self, err = await loop.run_in_executor(None, dns_selftest, app.my_ip)
+        if ok_self:
+            print(f"AUTOTEST DNS: OK - serwer DNS na {app.my_ip} odpowiada poprawnie.")
+        else:
+            ok_lo, _ = await loop.run_in_executor(None, dns_selftest, "127.0.0.1")
+            print(f"AUTOTEST DNS: BŁĄD - brak odpowiedzi na {app.my_ip} ({err}). "
+                  f"Na 127.0.0.1: {'działa' if ok_lo else 'też nie działa'}.")
+            print("   Wyślij tę linię do analizy.")
+        app.log.write("autotest", ok=ok_self, blad=str(err) if err else None)
 
     if hasattr(os, "getuid"):
         try:
