@@ -2,7 +2,7 @@
 rem Wspolna czesc startowa - uruchamiaj START_PODSLUCH_*.bat, nie ten plik.
 chcp 65001 >nul
 cd /d "%~dp0"
-title Podsluch sterownika pieca
+title Piec
 
 set "PY="
 py -3 -c "import sys" >nul 2>&1 && set "PY=py -3"
@@ -23,7 +23,7 @@ netsh advfirewall firewall delete rule name="ekoproxy piec" >nul 2>&1
 netsh advfirewall firewall add rule name="ekoproxy piec" dir=in action=allow program="%PYEXE%" enable=yes profile=any remoteip=localsubnet >nul
 if errorlevel 1 (echo Uwaga: nie udalo sie dodac reguly zapory.) else (echo Zapora: regula "ekoproxy piec" dodana - tylko siec domowa.)
 
-%PY% ekoproxy.py %*
+%PY% %*
 
 netsh advfirewall firewall delete rule name="ekoproxy piec" >nul 2>&1
 echo Regula zapory usunieta.

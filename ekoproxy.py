@@ -208,12 +208,12 @@ def dns_selftest(ip):
 # ---------------------------------------------------------------- TCP proxy
 
 class App:
-    def __init__(self, args):
+    def __init__(self, args, prefix="podsluch"):
         self.args = args
         self.my_ip = args.ip or local_ip()
         self.patterns = [p.strip().lower() for p in args.spoof.split(",") if p.strip()]
         stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log = Log(os.path.join(args.logdir, f"podsluch_{stamp}.jsonl"))
+        self.log = Log(os.path.join(args.logdir, f"{prefix}_{stamp}.jsonl"))
         self.upstream_host = args.upstream_host
         self.upstream_ip = None
         self.upstream_pref = False

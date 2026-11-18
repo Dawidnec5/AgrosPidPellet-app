@@ -5,4 +5,4 @@ if errorlevel 1 (
   powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
   exit /b
 )
-call "%~dp0_start.bat"
+call "%~dp0_start.bat" ekoproxy.py

@@ -7,4 +7,4 @@ if errorlevel 1 (
   powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
   exit /b
 )
-call "%~dp0_start.bat" --spoof "*" --ports 1-10000
+call "%~dp0_start.bat" ekoproxy.py --spoof "*" --ports 1-10000
