@@ -3,6 +3,18 @@
 Cel: podglądać i zmieniać ustawienia kotła pelletowego z telefonu, tak jak w ekotlownia.pl,
 ale bez opłat i bez chmury producenta.
 
+> **Projekt nieoficjalny i niezależny.** Nie jest związany z firmami Technix ani Bolecki ani
+> z platformą ekotlownia.pl, ani przez nie wspierany. Nazwy produktów służą wyłącznie do
+> wskazania, z jakim urządzeniem projekt współpracuje. Projekt powstał przez obserwację ruchu
+> sieciowego **własnego** sterownika w celu współpracy z własnym oprogramowaniem. Nie łamie
+> zabezpieczeń, nie odpytuje serwerów producenta i nie zawiera kodu ani firmware producenta.
+> Używasz na własną odpowiedzialność: nastawy kotła zmieniaj rozważnie, w zakresach z instrukcji.
+> Zabezpieczenie STB działa sprzętowo, niezależnie od sterownika i aplikacji.
+>
+> Tryb `sam` w ogóle nie łączy się z ekotlownia.pl. Tryb `proxy` jedynie przekazuje do
+> platformy dane wysyłane przez sterownik, tak jak bez tego programu. Jeśli korzystasz
+> z ekotlownia.pl, obowiązuje Cię jej regulamin.
+
 ## Jak sterownik łączy się z internetem (z instrukcji producenta)
 
 - Moduł internetowy jest **wbudowany**: złącze RJ45 (kabel LAN) z boku obudowy.
