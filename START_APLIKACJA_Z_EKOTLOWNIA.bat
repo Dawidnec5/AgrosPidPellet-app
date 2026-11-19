@@ -1,5 +1,5 @@
 @echo off
-rem Aplikacja: dane ida tez do ekotlownia.pl (strona producenta dalej dziala).
+rem Aplikacja (tryb proxy): dane sterownika ida tez do ekotlownia.pl - tylko dla posiadaczy abonamentu.
 rem Zamknij wczesniej okno podsluchu - oba programy uzywaja tych samych portow.
 net session >nul 2>&1
 if errorlevel 1 (

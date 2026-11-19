@@ -1,0 +1,32 @@
+# Autostart serwera pieca na Linuxie / Raspberry Pi (systemd).
+# Instalacja (projekt skopiowany do /opt/piec):
+#   sudo cp /opt/piec/linux/piec.service /etc/systemd/system/piec.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now piec
+# Podgląd działania:  journalctl -u piec -f
+# Baza z historią i logi: /var/lib/piec
+[Unit]
+Description=Serwer sterownika pieca (ArgosPid Plus) - aplikacja lokalna
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Jeśli na komputerze działa systemd-resolved (np. Ubuntu), dopisz na końcu:
+#   --bind ADRES_TEGO_KOMPUTERA
+ExecStart=/usr/bin/python3 /opt/piec/piec_serwer.py --tryb sam --baza /var/lib/piec/piec.db --logdir /var/lib/piec/logi
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+# Bez roota: osobny, tymczasowy użytkownik z prawem tylko do portów 53 i 80
+DynamicUser=yes
+StateDirectory=piec
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

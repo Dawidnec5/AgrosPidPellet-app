@@ -1,5 +1,5 @@
 @echo off
-rem Aplikacja bez ekotlownia.pl - tylko ten komputer, bez abonamentu.
+rem Aplikacja (tryb sam): tylko ten komputer, bez laczenia z ekotlownia.pl. Zalecany.
 rem Zamknij wczesniej okno podsluchu - oba programy uzywaja tych samych portow.
 net session >nul 2>&1
 if errorlevel 1 (

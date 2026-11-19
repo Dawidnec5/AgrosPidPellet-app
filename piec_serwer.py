@@ -9,8 +9,8 @@ komputer. Serwer:
     następne zapytanie, w tym samym formacie co z ekotlownia.pl, i jest potwierdzana.
 
 Tryby:
-  --tryb proxy  (domyślny) dane idą też do ekotlownia.pl - strona producenta dalej działa
-  --tryb sam    tylko ten komputer, bez ekotlownia.pl (bez abonamentu)
+  --tryb sam    (domyślny) tylko ten komputer, bez łączenia z ekotlownia.pl
+  --tryb proxy  dane sterownika idą też do ekotlownia.pl (dla posiadaczy abonamentu)
 
 Tylko biblioteka standardowa Pythona 3.8+.
 """
@@ -477,13 +477,17 @@ async def run(args):
     except OSError as e:
         print(f"HTTP: nie mogę otworzyć portu {args.port} ({e}). Czy coś innego go używa?")
         return
-    print(f"HTTP: port {args.port} - OK\nCzekam na sterownik... (Ctrl+C kończy)\n")
+    print(f"HTTP: port {args.port} - OK")
+    if not app.setting("haslo"):
+        print("UWAGA: brak hasła do zmian - każdy w Twojej sieci może zmieniać nastawy.\n"
+              "       Ustaw je w aplikacji: Nastawy -> Bezpieczeństwo -> Ustaw.")
+    print("Czekam na sterownik... (Ctrl+C kończy)\n")
     await asyncio.Event().wait()
 
 
 def main():
     ap = argparse.ArgumentParser(description="Własny serwer dla sterownika ArgosPid Plus")
-    ap.add_argument("--tryb", choices=["proxy", "sam"], default="proxy")
+    ap.add_argument("--tryb", choices=["proxy", "sam"], default="sam")
     ap.add_argument("--ip", help="adres tego komputera (domyślnie wykrywany)")
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=80)
