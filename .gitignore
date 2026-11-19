@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+logi/
+piec.db
+piec.db-journal
+*.zip
